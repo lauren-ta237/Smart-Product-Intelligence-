@@ -1,12 +1,13 @@
 // smart_product_ai_frontend/src/api/auth.ts
 import axios from "axios";
+import { API_BASE_URL } from "./config";
 
 /*
   Central API client for Auth specific tasks.
   Standardized to /api/v1 to avoid routing duplication.
 */
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1",
+  baseURL: import.meta.env.VITE_API_URL || API_BASE_URL,
   timeout: 30000,
   headers: {
     "Content-Type": "application/json"

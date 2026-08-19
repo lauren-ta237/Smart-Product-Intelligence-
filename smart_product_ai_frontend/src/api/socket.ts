@@ -1,3 +1,5 @@
+import { BACKEND_ORIGIN } from "./config";
+
 /*
     Real time AI progress.
     Instead of refreshing:
@@ -11,9 +13,12 @@ export function connectAnalysisSocket(
 analysisId:string,
 callback:(data:any)=>void
 ){
+const websocketOrigin = BACKEND_ORIGIN
+    ? BACKEND_ORIGIN.replace(/^http/, "ws")
+    : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 const socket =
 new WebSocket(
-`ws://localhost:8000/api/v1/ws/analysis/${analysisId}`
+`${websocketOrigin}/api/v1/ws/analysis/${analysisId}`
 );
 socket.onmessage =
 (event)=>{

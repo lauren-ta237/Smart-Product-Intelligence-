@@ -7,6 +7,8 @@ alembic
 
 pydantic
 pydantic-settings
+python-dotenv
+email-validator
 
 python-jose
 passlib
@@ -16,6 +18,10 @@ python-multipart
 
 celery
 redis
+google-genai
+google-auth
+anthropic
+rapidfuzz
 
 pytest
 pytest-asyncio

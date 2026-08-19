@@ -1,5 +1,5 @@
 # app/modules/products/router.py
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

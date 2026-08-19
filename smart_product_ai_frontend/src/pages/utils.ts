@@ -1,3 +1,5 @@
+import { BACKEND_ORIGIN } from "../api/config";
+
 export interface BoundingBox {
   x: number;
   y: number;
@@ -46,14 +48,18 @@ export function normalizeBoundingBox(box: any): BoundingBox | null {
 // --- IMAGE PATH NORMALIZATION ---
 export function formatImageUrl(url?: string): string {
   if (!url || url === "null" || url === "undefined" || url === "") {
-    return "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800";
+    return "";
   }
-  if (url.startsWith("blob:") || url.startsWith("data:")) return url;
-  
-  let cleanPath = url.replace(/http:\/\/localhost:8000\//g, "");
-  cleanPath = cleanPath.replace(/^uploads\//, "");
-  cleanPath = cleanPath.replace(/^\//, "");
-  
-  const finalUrl = `http://localhost:8000/uploads/${cleanPath}`;
-  return finalUrl;
+  const normalized = url.trim().replace(/\\/g, "/");
+  if (!normalized) return "";
+  if (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("blob:") ||
+    normalized.startsWith("data:")
+  ) return normalized;
+
+  const cleanPath = normalized.replace(/^\/+/, "");
+  const finalPath = cleanPath.startsWith("uploads/") ? cleanPath : `uploads/${cleanPath}`;
+  return `${BACKEND_ORIGIN}/${finalPath}`;
 }

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { type DetectedProduct } from "../types/products";
+import { formatImageUrl } from "../pages/imageUtils";
 import { useCart } from "../store/cart";
 
 interface Props {
@@ -109,16 +110,7 @@ export default function ProductDetectionViewer({
   }, [detectedProducts]);
 
   // 🟢 FIXED: Path resolution must be idempotent to avoid double http/uploads prefixes
-  const isAbsoluteUrl = imageUrl?.startsWith("http") || imageUrl?.startsWith("blob") || imageUrl?.startsWith("data:");
-  
-  let finalSrc = imageUrl;
-  if (!isAbsoluteUrl) {
-    let cleanPath = imageUrl?.replace(/^\//, "") || "";
-    if (cleanPath && !cleanPath.startsWith("uploads/")) {
-      cleanPath = "uploads/" + cleanPath;
-    }
-    finalSrc = `http://localhost:8000/${cleanPath}`;
-  }
+  const finalSrc = formatImageUrl(imageUrl);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start text-white">

@@ -1,6 +1,7 @@
 import { type DetectedProduct } from "../../types/products";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client"; 
+import { formatImageUrl } from "../../pages/imageUtils";
 
 interface Props {
   product: DetectedProduct;
@@ -13,17 +14,7 @@ export default function ProductEditor({ product }: Props) {
   // Resolve path strictly based on backend URL logic.
   const imageUrl = product.image_url || (product as any).imageUrl || "";
   
-  let parsedImgSrc = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80"; 
-
-  if (imageUrl) {
-    if (imageUrl.startsWith("http") || imageUrl.startsWith("blob") || imageUrl.startsWith("data:")) {
-        parsedImgSrc = imageUrl;
-    } else {
-        const cleanPath = imageUrl.replace(/^\//, "");
-        const finalPath = cleanPath.startsWith("uploads/") ? cleanPath : `uploads/${cleanPath}`;
-        parsedImgSrc = `http://localhost:8000/${finalPath}`;
-    }
-  }
+  const parsedImgSrc = formatImageUrl(imageUrl);
 
   const handleSaveAnalysis = async () => {
     try {

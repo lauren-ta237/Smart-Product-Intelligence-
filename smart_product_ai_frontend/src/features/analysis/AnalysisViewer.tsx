@@ -24,7 +24,10 @@ export default function AnalysisViewer({ imageUrl, products: initialProducts }: 
   const handleSaveToDatabase = async () => {
     setIsSaving(true);
     try {
-      const cleanPath = imageUrl.split("localhost:8000/").pop() || imageUrl;
+      const cleanPath = imageUrl
+        .replace(/\\/g, "/")
+        .replace(/^https?:\/\/[^/]+\/?/, "")
+        .replace(/^\/+/, "");
       const payloadProducts = products.map((p) => ({
         name: String(p.name || "Unnamed Product"),
         description: String(p.description || "AI-detected item"),

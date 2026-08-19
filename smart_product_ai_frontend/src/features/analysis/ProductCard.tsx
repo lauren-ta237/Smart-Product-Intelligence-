@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { DetectedProduct } from "../../types/products.ts";
 import { formatImageUrl, normalizeBoundingBox } from "../../api/imageUtils";
+import { api } from "../../api/client";
 
 interface Props {
   product: DetectedProduct;
@@ -58,9 +59,9 @@ export default function ProductCard({ product, onUpdate }: Props) {
     const delayDebounce = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/products/search?q=${encodeURIComponent(name)}`);
-        if (response.ok) {
-          const data = await response.json();
+      const response = await api.get(`/products/search?q=${encodeURIComponent(name)}`);
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.data;
           setSearchResults(data);
         }
       } catch (err) {

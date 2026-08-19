@@ -1,23 +1,33 @@
 import type { BoundingBox } from "../pages/dashboard";
+import { BACKEND_ORIGIN } from "../api/config";
 
 /**
  * Idempotently formats an image URL to ensure it points to the correct local asset path.
- * It ensures the URL starts with http://localhost:8000/ and has a single `uploads/` prefix.
+ * It ensures the URL has a single `uploads/` prefix and uses the configured backend origin.
  *
  * @param url The raw image URL from the product data.
  * @returns A correctly formatted and absolute URL for the image asset.
  */
 export function formatImageUrl(url?: string): string {
-	if (!url || url === "null" || url === "" || url === "undefined") {
-		return "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80";
-	}
-	if (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")) {
-		return url;
-	}
-	// Ensure path is relative and starts with 'uploads/'
-	const cleanPath = url.startsWith("/") ? url.substring(1) : url;
-	const final_path = cleanPath.startsWith("uploads/") ? cleanPath : `uploads/${cleanPath}`;
-	return `http://localhost:8000/${final_path}`;
+  if (!url || url === "null" || url === "undefined") return "";
+
+  const normalized = url.trim().replace(/\\/g, "/");
+  if (!normalized) return "";
+
+  if (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("blob:") ||
+    normalized.startsWith("data:")
+  ) {
+    return normalized;
+  }
+
+  const withoutLeadingSlash = normalized.replace(/^\/+/, "");
+  const finalPath = withoutLeadingSlash.startsWith("uploads/")
+    ? withoutLeadingSlash
+    : `uploads/${withoutLeadingSlash}`;
+  return `${BACKEND_ORIGIN}/${finalPath}`;
 }
 
 /**
