@@ -28,7 +28,7 @@ async def upload_image(
     """
     service = MediaService(db)
     image = await service.upload_image(
-        vendor.id,
+        vendor,
         file
     )
     return {

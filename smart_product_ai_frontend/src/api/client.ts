@@ -1,12 +1,14 @@
+// smart_product_ai_frontend/src/api/client.ts
 import axios from "axios";
 
 /*
  Central HTTP client.
  All frontend requests go through here.
+ 🟢 The baseURL includes the version prefix /v1.
 */
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api",
-  timeout: 30000,
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1",
+  timeout: 60000,
   headers: {
     "Content-Type": "application/json"
   }
@@ -24,9 +26,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers = config.headers || {};
       // 🟢 Type Guard: Handles indexing safely for dynamic Axios versions
-      config.headers.set 
-        ? config.headers.set("Authorization", `Bearer ${token}`)
-        : (config.headers["Authorization"] = `Bearer ${token}`);
+      if (config.headers.set) {
+        config.headers.set("Authorization", `Bearer ${token}`);
+      } else {
+        config.headers["Authorization"] = `Bearer ${token}`;
+      }
     }
 
     return config;

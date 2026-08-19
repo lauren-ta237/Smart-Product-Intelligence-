@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+# app/modules/catalog/router.py
+import uuid
+from typing import List, Optional
+import traceback
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List, Optional
-from pydantic import BaseModel
-from app.core.auth import get_current_vendor, get_current_vendor_optional
+from app.core.auth import get_current_vendor
 from app.core.database import get_db
 from app.modules.catalog.models import Product
 
 router = APIRouter(
-    prefix="",
+    prefix="/products",
     tags=["Inventory Management"]
 )
+
 
 class InventorySearchResponse(BaseModel):
     name: str
@@ -22,6 +27,7 @@ class InventorySearchResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class ProductUpdateItem(BaseModel):
     name: str
@@ -35,82 +41,101 @@ class ProductUpdateItem(BaseModel):
     image_url: Optional[str] = None
     bounding_box: Optional[dict] = None
     approved: bool = False
+    price: Optional[float] = 0.0
+    stock_quantity: Optional[int] = 0
+    location: Optional[str] = None
+
 
 class BatchUpdatePayload(BaseModel):
     products: List[ProductUpdateItem]
     image_url: Optional[str] = None
+    vendor_id: Optional[str] = None
+    market_region: Optional[str] = "Global"
 
 
-@router.get("/inventory/search", response_model=List[InventorySearchResponse])
+@router.get("/search", response_model=List[InventorySearchResponse])
 async def search_catalog_inventory(
     q: str = Query(..., description="The product search query term"),
     db: AsyncSession = Depends(get_db)
 ):
-    print(f"[CATALOG SEARCH] Incoming frontend query: '{q}'")
-    
+    """Search catalog inventory by name."""
     stmt = select(Product).where(Product.name.ilike(f"%{q}%")).limit(5)
     result = await db.execute(stmt)
-    matched_products = result.scalars().all()
-    
-    return matched_products
+    return result.scalars().all()
 
 
-@router.post("/products/batch-update")
+@router.post("/batch-update")
 async def batch_update_products(
     payload: BatchUpdatePayload,
     db: AsyncSession = Depends(get_db),
-    vendor = Depends(get_current_vendor_optional)
+    vendor_id=Depends(get_current_vendor)
 ):
-    """Persist AI-detected product updates for the current vendor."""
-    print(f"[BATCH UPDATE] Processing batch save for {len(payload.products)} items.")
-
+    """Persist AI-detected products with normalized image paths."""
     if not payload.products:
         return {"status": "success", "message": "No products to process."}
 
     try:
-        vendor_id = None
-        if vendor is not None:
-            vendor_id = getattr(vendor, "id", None) or vendor.get("id")
+        # Normalize image paths while preserving uploads/ folder.
+        def clean_img_path(path: str | None):
+            if not path or path.startswith("blob:"):
+                return None
 
-        if vendor_id is None and getattr(payload, "image_url", None):
-            try:
-                from app.modules.intelligence.models import AIAnalysis
+            # Normalize slashes and trim leading/trailing slashes
+            clean = path.replace("\\", "/").strip("/")
 
-                stmt = select(AIAnalysis).where(AIAnalysis.image_url == payload.image_url).limit(1)
-                res = await db.execute(stmt)
-                analysis_row = res.scalars().first()
-                if analysis_row and getattr(analysis_row, "vendor_id", None):
-                    vendor_id = getattr(analysis_row, "vendor_id")
-                    vendor = type("_V", (), {"id": vendor_id})()
-                    print(f"[BATCH INFO] Inferred vendor_id {vendor_id} from AIAnalysis")
-            except Exception as infer_err:
-                print(f"[BATCH INFO] Could not infer vendor from image_url: {infer_err}")
+            # Handle absolute URLs
+            if clean.startswith("http://") or clean.startswith("https://"):
+                # If this is a local uploads URL, extract the uploads path
+                if "/uploads/" in clean:
+                    clean = clean.split("/uploads/")[-1]
+                else:
+                    # External URL, leave unchanged
+                    return clean
+
+            # Already has uploads/ prefix
+            if clean.startswith("uploads/"):
+                return clean
+
+            # Ensure uploads/ prefix exists
+            filename = clean.split("/")[-1]
+            return f"uploads/{filename}"
+
+        default_img = clean_img_path(payload.image_url)
 
         for item in payload.products:
             if not item.name:
                 continue
 
-            stmt = select(Product).where(Product.name == item.name)
-            if vendor_id is not None:
-                stmt = stmt.where(Product.vendor_id == vendor_id)
-            else:
-                stmt = stmt.where(Product.vendor_id.is_(None))
-            stmt = stmt.limit(1)
+            product_stmt = select(Product).where(
+                Product.name == item.name,
+                Product.vendor_id == vendor_id
+            ).limit(1)
 
-            result = await db.execute(stmt)
+            result = await db.execute(product_stmt)
             product = result.scalars().first()
 
-            if product is not None:
+            # Resolve the correct permanent URL.
+            # Reject any blob: URLs coming from the frontend preview.
+            final_image_path = clean_img_path(item.image_url) or default_img
+
+            if product:
                 product.description = item.description
                 product.brand = item.brand
                 product.category = item.category
-                product.sku = item.sku
-                product.market_sku = item.market_sku
+                product.sku = item.sku or product.sku
+                product.market_sku = item.market_sku or product.market_sku
                 product.sku_cm = item.sku_cm
                 product.sku_us = item.sku_us
-                product.image_url = item.image_url or payload.image_url
+
+                if final_image_path:
+                    product.image_url = final_image_path
+
                 product.bounding_box = item.bounding_box
                 product.approved = item.approved
+                product.price = item.price
+                product.stock_quantity = item.stock_quantity
+                product.location = item.location
+
             else:
                 new_product = Product(
                     vendor_id=vendor_id,
@@ -118,25 +143,30 @@ async def batch_update_products(
                     description=item.description,
                     brand=item.brand,
                     category=item.category,
-                    sku=item.sku,
+                    sku=item.sku or f"SKU-{uuid.uuid4().hex[:8].upper()}",
                     market_sku=item.market_sku,
                     sku_cm=item.sku_cm,
                     sku_us=item.sku_us,
-                    image_url=item.image_url or payload.image_url,
+                    image_url=final_image_path,
                     bounding_box=item.bounding_box,
                     approved=item.approved,
+                    price=item.price,
+                    stock_quantity=item.stock_quantity,
+                    location=item.location
                 )
                 db.add(new_product)
 
-            await db.flush()
-
         await db.commit()
-        return {"status": "success", "message": "Product configurations verified and saved successfully."}
 
-    except Exception as global_err:
-        print(f"[CRITICAL FAILURE] Global commit block explicitly failed: {global_err}")
+        return {
+            "status": "success",
+            "message": "Product configurations saved successfully."
+        }
+
+    except Exception as e:
         await db.rollback()
+        traceback.print_exc()
         raise HTTPException(
-            status_code=500, 
-            detail=f"Database persistent storage rejected: {str(global_err)}"
+            status_code=500,
+            detail=f"Database commit failed: {str(e)}"
         )

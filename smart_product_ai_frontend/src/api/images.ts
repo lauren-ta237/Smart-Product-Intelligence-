@@ -1,14 +1,15 @@
+// smart_product_ai_frontend/src/api/images.ts
 import { api } from "./client";
 
 export async function uploadImage(file: File) {
   const form = new FormData();
   form.append("file", file);
 
+  // 🟢 Fixed: Path simplified to "/media/upload"
   const response = await api.post(
-    "/v1/images/upload",
+    "/media/upload",
     form,
     {
-      // 🟢 Pass headers safely, letting Axios append to interceptor variables
       headers: {
         "Content-Type": "multipart/form-data"
       }

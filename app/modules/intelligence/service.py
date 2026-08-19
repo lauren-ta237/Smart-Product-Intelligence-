@@ -1,255 +1,87 @@
-import time
-import traceback
 import os
+import time
+import logging
+import traceback
+from typing import List, Dict, Any, Optional
+from uuid import UUID
+from urllib.parse import urlparse
 
-from rapidfuzz import process, fuzz
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from rapidfuzz import fuzz
 
 from app.modules.intelligence.models import AIAnalysis, AnalysisStatus
 from app.modules.intelligence.processor import AIProcessor, InvalidDatasetException
 from app.modules.catalog.models import DetectedProduct, Product
 
+logger = logging.getLogger(__name__)
+
 
 class IntelligenceService:
-    def __init__(self, db):
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.processor = AIProcessor()
 
-    async def analyze(self, image, vendor, analysis_id: str, context: dict = None):
-        """
-        AI pipeline:
-        - Runs vision model with dynamic SKU instructions
-        - Matches products with fuzzy score
-        - Enriches or gracefully falls back to raw extracted text data
-        - Stores detected products
-        """
-        start = time.time()
-        context = context or {}
+    @staticmethod
+    def _to_dict(item: Any) -> dict:
+        """Helper to uniformly convert Pydantic models or dicts to a flat dictionary."""
+        if hasattr(item, "model_dump"):
+            return item.model_dump()
+        elif hasattr(item, "dict"):
+            return item.dict()
+        elif isinstance(item, dict):
+            return item
+        return {}
 
-        # ----------------------------
-        # FETCH ANALYSIS TRACKER
-        # ----------------------------
-        result_set = await self.db.execute(
-            select(AIAnalysis).where(AIAnalysis.id == analysis_id)
-        )
-        analysis = result_set.scalar_one_or_none()
-
-        if not analysis:
-            print(f"[ERROR] Analysis ID {analysis_id} not found.")
+    async def _match_product_pg_trgm(self, product_name: str, threshold: float = 0.3) -> Optional[Product]:
+        """
+        Database-level fuzzy matching using PostgreSQL pg_trgm similarity.
+        """
+        clean_name = product_name.strip() if product_name else ""
+        if len(clean_name) < 2:
             return None
 
         try:
-            # ----------------------------
-            # DEBUG FILE PATH
-            # ----------------------------
-            clean_path = (
-                image.storage_url.split("localhost:8000/")[-1]
-                if "localhost" in image.storage_url
-                else image.storage_url
-            )
-            absolute_path = os.path.abspath(clean_path)
-            print(f"[DIAGNOSTIC] File exists: {os.path.exists(absolute_path)}")
+            async with self.db.begin_nested():
+                sim_score = func.similarity(Product.name, clean_name)
 
-            # ----------------------------
-            # CONTEXT PROMPT (METHOD 2: DYNAMIC EXTRACTION INSTRUCTIONS)
-            # ----------------------------
-            vendor_country = context.get("country") or getattr(vendor, "country", "Global")
-            vendor_city = context.get("city") or getattr(vendor, "city", "Any City")
-            vendor_lang = context.get("language") or getattr(vendor, "preferred_language", "en")
-
-            context["prompt"] = (
-                f"Identify products in image from {vendor_city}, {vendor_country}. "
-                f"Language: {vendor_lang}. Return JSON with bounding boxes normalized 0–1. "
-                f"CRITICAL INSTRUCTION: Closely read all text inside the image packaging, price tags, "
-                f"shelf labels, or visible barcodes. Extract any serial numbers, model numbers, or serial strings "
-                f"and map them directly to the 'sku' string field. If a regional variant identifier is explicitly "
-                f"distinguishable, map it into 'sku_us' or 'sku_cm' respectively."
-            )
-
-            # ----------------------------
-            # RUN AI MODEL (Guardrail Intercept point)
-            # ----------------------------
-            result = await self.processor.process_image(image, context=context)
-
-            products_list = (
-                result.products
-                if hasattr(result, "products")
-                else result
-                if isinstance(result, list)
-                else result.get("products", [])
-            )
-
-            # ----------------------------
-            # LOAD PRODUCTS ONCE (IMPORTANT)
-            # ----------------------------
-            db_result = await self.db.execute(select(Product))
-            all_products = db_result.scalars().all()
-            product_names = [p.name for p in all_products]
-
-            # ----------------------------
-            # PROCESS DETECTIONS
-            # ----------------------------
-            for item in products_list:
-                is_pydantic = not isinstance(item, dict)
-
-                product_name = (
-                    getattr(item, "name", None)
-                    or getattr(item, "product_name", None)
-                    if is_pydantic
-                    else item.get("name")
-                    or item.get("product_name")
-                    or "Unknown Product"
+                stmt = (
+                    select(Product)
+                    .where(Product.name.op("%")(clean_name))
+                    .order_by(sim_score.desc())
+                    .limit(5)
                 )
+                result = await self.db.execute(stmt)
+                candidates = result.scalars().all()
 
-                confidence = float(
-                    getattr(item, "confidence_score", None)
-                    or getattr(item, "confidence", None)
-                    if is_pydantic
-                    else item.get("confidence_score")
-                    or item.get("confidence")
-                    or 1.0
-                )
+                if not candidates:
+                    stmt_fallback = (
+                        select(Product)
+                        .where(sim_score > threshold)
+                        .order_by(sim_score.desc())
+                        .limit(5)
+                    )
+                    res = await self.db.execute(stmt_fallback)
+                    candidates = res.scalars().all()
 
-                raw_box = (
-                    getattr(item, "bounding_box", None)
-                    if is_pydantic
-                    else item.get("bounding_box")
-                ) or {}
+                if not candidates:
+                    return None
 
-                box = raw_box.model_dump() if hasattr(raw_box, "model_dump") else raw_box
+                return max(candidates, key=lambda p: self.compute_match_score(clean_name, p))
 
-                sku_val = (
-                    getattr(item, "sku", None)
-                    if is_pydantic
-                    else item.get("sku") or item.get("possible_sku")
-                )
-                
-                # Extract optional specific regional keys if populated directly by the AI parser
-                ai_sku_us = getattr(item, "sku_us", None) if is_pydantic else item.get("sku_us")
-                ai_sku_cm = getattr(item, "sku_cm", None) if is_pydantic else item.get("sku_cm")
+        except Exception as e:
+            logger.warning(f"[DB MATCH] pg_trgm similarity query failed or extension missing: {e}")
+            return None
 
-                # ----------------------------
-                # FUZZY MATCHING
-                # ----------------------------
-                best_product = None
+    def compute_match_score(self, ai_name: str, product: Product) -> float:
+        """Calculates a weighted similarity score."""
+        ai_name_lower = (ai_name or "").lower()
+        product_name_lower = (product.name or "").lower()
 
-                match = process.extractOne(
-                    product_name,
-                    product_names,
-                    scorer=fuzz.WRatio
-                )
-
-                if match:
-                    matched_name, score, _ = match
-                    if score >= 80:
-                        best_product = next(
-                            (p for p in all_products if p.name == matched_name),
-                            None
-                        )
-
-                # ----------------------------
-                # SKU ENRICHMENT & DYNAMIC FALLBACK
-                # ----------------------------
-                sku_us = best_product.sku_us if best_product else (ai_sku_us or sku_val)
-                sku_cm = best_product.sku_cm if best_product else (ai_sku_cm or sku_val)
-                
-                # 🎯 PRESENTATION PATCH: Automatically match the current active market setting
-                active_market = context.get("market_active") or (vendor_country if vendor_country in ["CM", "US"] else "CM")
-                
-                if best_product and best_product.market_sku:
-                    market_sku = best_product.market_sku
-                else:
-                    if active_market == "CM":
-                        market_sku = sku_cm or sku_val or "SKU-CM-DUMMY"
-                    elif active_market == "US":
-                        market_sku = sku_us or sku_val or "SKU-US-DUMMY"
-                    else:
-                        market_sku = sku_val or "SKU-GENERIC"
-
-                # ----------------------------
-                # SAVE DETECTION
-                # ----------------------------
-                detected = DetectedProduct(
-                    analysis_id=analysis.id,
-                    name=product_name,
-                    description=getattr(item, "description", None) if is_pydantic else item.get("description"),
-                    category=getattr(item, "category", None) if is_pydantic else item.get("category"),
-                    brand=getattr(item, "brand", None) if is_pydantic else item.get("brand"),
-                    sku=sku_val,
-                    sku_us=sku_us,
-                    sku_cm=sku_cm,
-                    market_sku=market_sku, 
-                    confidence_score=confidence,
-                    bounding_box=box
-                )
-
-                self.db.add(detected)
-
-            # ----------------------------
-            # UPDATE TRACKER ON SUCCESS
-            # ----------------------------
-            analysis.raw_response = (
-                result.model_dump()
-                if hasattr(result, "model_dump")
-                else result
-                if isinstance(result, list)
-                else result
-            )
-            analysis.detected_count = len(products_list)
-            analysis.status = AnalysisStatus.COMPLETED
-            
-            analysis.processing_time = time.time() - start
-            await self.db.commit()
-
-        except InvalidDatasetException as ide:
-            print(f"\n[GUARDRAIL HALT] Intelligence Service caught invalid dataset: {ide}\n")
-            await self.db.rollback()
-            
-            try:
-                fresh_result = await self.db.execute(
-                    select(AIAnalysis).where(AIAnalysis.id == analysis_id)
-                )
-                analysis = fresh_result.scalar_one_or_none()
-                if analysis:
-                    analysis.status = AnalysisStatus.FAILED
-                    analysis.processing_time = time.time() - start
-                    await self.db.commit()
-                    print("[FALLBACK] Saved FAILED state successfully for invalid image.")
-            except Exception as fallback_err:
-                print(f"[FATAL] Failed to update status on guardrail intercept: {fallback_err}")
-                
-            # Re-raise to bubble up to the FastAPI router handler level
-            raise ide
-
-        except Exception:
-            print("\n[ERROR] Intelligence Service Failed\n")
-            traceback.print_exc()
-            
-            # 1. Clear the poisoned transaction block immediately
-            await self.db.rollback()
-            
-            try:
-                # 2. Re-fetch tracking block inside a fresh transaction sequence
-                fresh_result = await self.db.execute(
-                    select(AIAnalysis).where(AIAnalysis.id == analysis_id)
-                )
-                analysis = fresh_result.scalar_one_or_none()
-                
-                if analysis:
-                    analysis.status = AnalysisStatus.FAILED
-                    analysis.processing_time = time.time() - start
-                    await self.db.commit()
-                    print("[FALLBACK] Saved FAILED state successfully.")
-            except Exception as fallback_err:
-                print(f"[FATAL] Failed to record engine failure status: {fallback_err}")
-
-        return analysis
-
-    def compute_match_score(self, ai_name, product):
-        name_score = fuzz.WRatio(ai_name, product.name)
-        brand_score = 100 if product.brand and product.brand.lower() in ai_name.lower() else 0
-        category_score = 100 if product.category and product.category.lower() in ai_name.lower() else 0
-        sku_score = 100 if product.sku and product.sku.lower() in ai_name.lower() else 0
+        name_score = fuzz.WRatio(ai_name_lower, product_name_lower)
+        brand_score = 100 if product.brand and product.brand.lower() in ai_name_lower else 0
+        category_score = 100 if product.category and product.category.lower() in ai_name_lower else 0
+        sku_score = 100 if product.sku and product.sku.lower() in ai_name_lower else 0
 
         return (
             name_score * 0.55 +
@@ -257,3 +89,113 @@ class IntelligenceService:
             category_score * 0.15 +
             sku_score * 0.10
         )
+
+    async def analyze(self, image: Any, vendor: Any, analysis_id: str, context: Optional[dict] = None) -> Optional[AIAnalysis]:
+        start = time.time()
+        context = context or {}
+
+        try:
+            parsed_analysis_id = UUID(str(analysis_id))
+        except (ValueError, AttributeError, TypeError):
+            logger.error(f"[ERROR] Invalid analysis_id supplied: {analysis_id}")
+            return None
+
+        result_set = await self.db.execute(
+            select(AIAnalysis).where(AIAnalysis.id == parsed_analysis_id)
+        )
+        analysis = result_set.scalar_one_or_none()
+
+        if not analysis:
+            logger.error(f"[ERROR] Analysis ID {parsed_analysis_id} not found.")
+            return None
+
+        try:
+            # Context Prompt Assembly
+            vendor_country = context.get("country") or getattr(vendor, "country", "Global")
+            vendor_city = context.get("city") or getattr(vendor, "city", "Any City")
+            vendor_lang = context.get("language") or getattr(vendor, "preferred_language", "en")
+
+            context["prompt"] = (
+                f"Identify products in image from {vendor_city}, {vendor_country}. "
+                f"Language: {vendor_lang}. Return JSON with bounding boxes normalized 0–1. "
+                f"Extract visible text for SKU and estimated price."
+            )
+
+            # Model Execution
+            result = await self.processor.process_image(image, context=context)
+
+            raw_products = (
+                result.products if hasattr(result, "products")
+                else result if isinstance(result, list)
+                else result.get("products", []) if isinstance(result, dict)
+                else []
+            )
+
+            # Process Detections
+            for raw_item in raw_products:
+                item = self._to_dict(raw_item)
+
+                product_name = item.get("name") or item.get("product_name") or "Unknown Product"
+                confidence = float(item.get("confidence_score") or item.get("confidence") or 1.0)
+                box = self._to_dict(item.get("bounding_box"))
+
+                sku_val = item.get("sku") or item.get("possible_sku")
+                
+                try:
+                    raw_price = item.get("estimated_price") or item.get("price")
+                    extracted_price = float(raw_price) if raw_price is not None else 0.0
+                except (ValueError, TypeError):
+                    extracted_price = 0.0
+
+                # Fuzzy Matching
+                best_product = await self._match_product_pg_trgm(product_name, threshold=0.3)
+
+                # Determine Price
+                if best_product and best_product.price is not None and float(best_product.price) > 0:
+                    final_price = float(best_product.price)
+                else:
+                    final_price = extracted_price
+
+                # Queue Record
+                detected = DetectedProduct(
+                    analysis_id=analysis.id,
+                    name=product_name,
+                    description=item.get("description"),
+                    category=item.get("category"),
+                    brand=item.get("brand"),
+                    sku=sku_val,
+                    market_sku=sku_val,
+                    confidence_score=confidence,
+                    bounding_box=box,
+                    price=final_price,
+                    image_url=analysis.image_url  # 🟢 Storing the path here
+                )
+                self.db.add(detected)
+
+            analysis.detected_count = len(raw_products)
+            analysis.status = AnalysisStatus.COMPLETED
+            analysis.processing_time = time.time() - start
+
+            await self.db.commit()
+            return analysis
+
+        except Exception as exc:
+            logger.error(f"[ERROR] Intelligence Service Failed: {exc}")
+            traceback.print_exc()
+            return await self._mark_failed(parsed_analysis_id, start)
+
+    async def _mark_failed(self, analysis_id: UUID, start_time: float) -> Optional[AIAnalysis]:
+        try:
+            await self.db.rollback()
+            fresh_result = await self.db.execute(
+                select(AIAnalysis).where(AIAnalysis.id == analysis_id)
+            )
+            analysis = fresh_result.scalar_one_or_none()
+            if analysis:
+                analysis.status = AnalysisStatus.FAILED
+                analysis.processing_time = time.time() - start_time
+                await self.db.commit()
+                return analysis
+        except Exception as err:
+            logger.error(f"[FATAL] Failed to update failure status: {err}")
+        return None

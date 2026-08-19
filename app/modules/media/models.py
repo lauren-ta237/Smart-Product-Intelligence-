@@ -21,16 +21,18 @@ class ProductImage(BaseModel):
     )
     __tablename__ = "product_images"
 
+    # Scoped directly to the master identity table
     vendor_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("vendors.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
-    storage_url: Mapped[str]
-    file_name: Mapped[str]
+    storage_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[ImageStatus] = mapped_column(
         Enum(ImageStatus),
-        default=ImageStatus.UPLOADED
+        default=ImageStatus.UPLOADED,
+        nullable=False
     )
-    width: Mapped[int | None]
-    height: Mapped[int | None]
-    mime_type: Mapped[str | None]
+    width: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    height: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)

@@ -1,50 +1,94 @@
-import {
-    BrowserRouter,
-    Routes,
-    Route
-} from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-// 🟢 Corrected Module & Feature Relative Path Imports
 import Review from "../pages/Review";
-import Login from '../features/auth/login';
+import Login from "../features/auth/login";
+import Register from "../features/auth/register";
 import Dashboard from "../pages/dashboard";
 import Upload from "../features/upload/UploadDropzone";
-
-// 🟢 Looks in the exact same folder (src/app/) for your Route guard
+import BuyerOrders from "../app/buyer/orders/page";
+import AdminDashboard from "../pages/AdminDashboard";
+import CheckoutPage from "../pages/CheckoutPage";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
 
 export default function Router() {
-    return (
-        <BrowserRouter>
-            <Routes>
-                {/* Core Workspace Hub (Requires Token Auth Guard Validation) */}
-                <Route
-                    path="/"
-                    element={
-                        <ProtectedRoute>
-                            <Dashboard />
-                        </ProtectedRoute>
-                    }
-                />
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Main Marketplace Dashboard (Accessible by Vendors & Buyers) */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute allowedRoles={["vendor", "buyer", "customer"]}>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
 
-                {/* Identity Management Gateway */}
-                <Route
-                    path="/login"
-                    element={<Login />}
-                />
+        {/* Superadmin Dashboard */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["admin", "superadmin"]}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
 
-                {/* AI Auditing Review Workspace Module */}
-                <Route
-                    path="/review"
-                    element={<Review />}
-                />
+        {/* Buyer Orders Dashboard */}
+        <Route
+  path="/buyer/orders"
+  element={
+    <>
+      {/* 🟢 Allowed vendors and administrators to access order tracking */}
+      <ProtectedRoute allowedRoles={["buyer", "customer", "vendor", "admin"]}>
+        <BuyerOrders />
+      </ProtectedRoute>
+    </>
+  }
+/>
 
-                {/* Multimodal File Upload Pipeline Ingestion Target */}
-                <Route
-                    path="/upload"
-                    element={<Upload />}
-                />
-            </Routes>
-        </BrowserRouter>
-    );
+        {/* Checkout Flow Protected Route */}
+        <Route
+          path="/checkout"
+          element={
+            <ProtectedRoute allowedRoles={["buyer", "customer"]}>
+              <CheckoutPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Auth Routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* General Audit/Upload routes */}
+        <Route
+          path="/review"
+          element={
+            <ProtectedRoute>
+              <Review />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/upload"
+          element={
+            <ProtectedRoute>
+              <Upload />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Auxiliary Route Fallbacks for Seamless Experience */}
+        <Route path="/marketplace" element={<Navigate to="/" replace />} />
+        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="/orders" element={<Navigate to="/buyer/orders" replace />} />
+        <Route path="/wishlist" element={<Navigate to="/" replace />} />
+        
+        {/* Fallback 404 Route redirecting to root landing page */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }

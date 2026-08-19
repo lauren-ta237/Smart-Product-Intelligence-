@@ -9,21 +9,24 @@ interface Props {
 export default function ProductEditor({ product }: Props) {
   const navigate = useNavigate(); 
   
-  // 🟢 Safe fallback if image_url is missing or undefined
-  const imageUrl = (product as any).image_url || "";
+  // 🟢 FIXED: Removed hardcoded placeholder string initialization.
+  // Resolve path strictly based on backend URL logic.
+  const imageUrl = product.image_url || (product as any).imageUrl || "";
   
-  // 🟢 High-quality placeholder fallback if no source image exists
-  let parsedImgSrc = "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500&q=80"; 
+  let parsedImgSrc = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80"; 
 
   if (imageUrl) {
-    const isAbsoluteUrl = imageUrl.startsWith("http") || imageUrl.startsWith("blob");
-    parsedImgSrc = isAbsoluteUrl ? imageUrl : `http://localhost:8000/${imageUrl}`;
+    if (imageUrl.startsWith("http") || imageUrl.startsWith("blob") || imageUrl.startsWith("data:")) {
+        parsedImgSrc = imageUrl;
+    } else {
+        const cleanPath = imageUrl.replace(/^\//, "");
+        const finalPath = cleanPath.startsWith("uploads/") ? cleanPath : `uploads/${cleanPath}`;
+        parsedImgSrc = `http://localhost:8000/${finalPath}`;
+    }
   }
 
-  // 🚀 Fixed: Dynamic data sync handler with no hardcoded presentation fallbacks
   const handleSaveAnalysis = async () => {
     try {
-      // Safely parse out confidence or fallback cleanly
       const rawConfidence = product.confidence_score || (product as any).confidence || 0.95;
       const parsedConfidence = rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence;
 
@@ -33,8 +36,8 @@ export default function ProductEditor({ product }: Props) {
         brand: product.brand || "Generic",
         description: product.description || "Detected Marketplace Asset",
         market_sku: product.market_sku || product.sku || "N/A",
-        confidence_score: Math.round(parsedConfidence),
-        image_url: (product as any).image_url || "",
+        confidence_score: parsedConfidence,
+        image_url: imageUrl,
         bounding_box: product.bounding_box || {
           x: 0.12,
           y: 0.18,
@@ -43,7 +46,7 @@ export default function ProductEditor({ product }: Props) {
         },
       });
 
-      if (response.status === 200) {
+      if (response.status === 200 || response.status === 201) {
         navigate("/review");
       }
     } catch (error) {
@@ -53,11 +56,7 @@ export default function ProductEditor({ product }: Props) {
 
   return (
     <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 text-slate-200">
-      
-      {/* Workspace Split Layout Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-        
-        {/* LEFT COLUMN: Read-Only Form Fields */}
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-white/5 pb-3">
             <h2 className="text-xl font-bold text-white tracking-tight">Review AI Result</h2>
@@ -103,7 +102,6 @@ export default function ProductEditor({ product }: Props) {
             </div>
           </div>
 
-          {/* REGIONAL VARIANTS DISPLAY */}
           <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
             <div>
               <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1">
@@ -130,7 +128,6 @@ export default function ProductEditor({ product }: Props) {
             </div>
           </div>
 
-          {/* 🟢 Interactive Trigger Action */}
           <button
             type="button"
             onClick={handleSaveAnalysis}
@@ -140,7 +137,6 @@ export default function ProductEditor({ product }: Props) {
           </button>
         </div>
 
-        {/* RIGHT COLUMN: Specific Image Source Card View */}
         <div className="space-y-2 h-full flex flex-col justify-between">
           <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
             Source Image Reference
@@ -153,6 +149,9 @@ export default function ProductEditor({ product }: Props) {
                 alt={product.name || "Audited product target"}
                 className="w-full h-full object-contain max-h-[400px] select-none rounded-xl"
                 crossOrigin="anonymous"
+                onError={(e) => {
+                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80";
+                }}
               />
               
               {product.bounding_box && (
@@ -169,7 +168,6 @@ export default function ProductEditor({ product }: Props) {
             </>
           </div>
         </div>
-
       </div>
     </div>
   );

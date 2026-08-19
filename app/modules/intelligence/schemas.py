@@ -1,7 +1,17 @@
-from pydantic import BaseModel, Field, AliasChoices
-from typing import List, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+
+class ImageUploadResponse(BaseModel):
+    id: UUID
+    status: str
+    url: str = Field(..., validation_alias="storage_url")
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class AnalysisResponse(BaseModel):
     """
@@ -15,18 +25,18 @@ class AnalysisResponse(BaseModel):
     detected_count: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
 
 class BoundingBoxSchema(BaseModel):
     """
-    Coordinates of detected object
-    inside the image.
+    Coordinates of detected object inside the image.
     """
     x: float
     y: float
     width: float
     height: float
+
 
 class DetectedItem(BaseModel):
     """
@@ -34,23 +44,24 @@ class DetectedItem(BaseModel):
     Every AI provider must eventually map into this structure.
     """
     name: str
-    description: str | None = None
-    category: str | None = None
-    brand: str | None = None
-    # Support mapping from 'market_sku' or 'sku' during extraction validation
-    sku: str | None = Field(
+    description: Optional[str] = None
+    category: Optional[str] = None
+    brand: Optional[str] = None
+    
+    sku: Optional[str] = Field(
         default=None, 
         validation_alias=AliasChoices("sku", "market_sku")
     )
-    # 🟢 ADDED: Allow AI to explicitly extract regional variants from packaging text
-    sku_us: str | None = None
-    sku_cm: str | None = None
     
+    sku_us: Optional[str] = None
+    sku_cm: Optional[str] = None
     confidence: float
     bounding_box: BoundingBoxSchema
 
+
 class AnalysisResult(BaseModel):
     products: List[DetectedItem]
+
 
 class DetectedProductResponse(BaseModel):
     """
@@ -59,27 +70,30 @@ class DetectedProductResponse(BaseModel):
     """
     id: UUID
     name: str
-    description: str | None = None
-    category: str | None = None
-    brand: str | None = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    brand: Optional[str] = None
     
-    # Allow the field to read from 'market_sku' (DB column) or 'sku' (AI output)
-    sku: str | None = Field(
+    sku: Optional[str] = Field(
         default=None, 
         validation_alias=AliasChoices("market_sku", "sku"),
-        serialization_alias="sku" # Guarantees the frontend always receives key name "sku"
+        serialization_alias="sku"
     )
     
-    # 🟢 ADDED: Send regional SKUs to your frontend dashboard metrics/view
-    sku_us: str | None = None
-    sku_cm: str | None = None
+    sku_us: Optional[str] = None
+    sku_cm: Optional[str] = None
     
-    # Safely bind confidence metrics regardless of attribute sourcing
     confidence_score: float = Field(
         validation_alias=AliasChoices("confidence_score", "confidence")
     )
     bounding_box: Dict[str, Any]
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True # Allows instantiating with either the field name or alias
+    # Dynamic Attributes
+    price: Optional[float] = 0.0
+    stock_quantity: Optional[int] = 0
+    location: Optional[str] = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True
+    )

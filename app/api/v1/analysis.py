@@ -63,7 +63,7 @@ async def analyze_image(
             )
         
         # 🟢 Extract Vendor ID safely
-        vendor_id = vendor.id if hasattr(vendor, "id") else vendor.get("id")
+        vendor_id = vendor
 
         # 🟢 CREATE MASTER TRACKER RECORD INITIALLY
         # This gives us our unique UUID key immediately to track polling states
@@ -122,7 +122,6 @@ async def get_detected_products(
     Returns products found by AI.
     Used by vendor review screen.
     """
-    # 🟢 Reuse your database formatting logic here if your repository returns unparsed strings
     prod_result = await db.execute(
         select(DetectedProduct).where(DetectedProduct.analysis_id == analysis_id)
     )
@@ -143,6 +142,9 @@ async def get_detected_products(
         if not isinstance(box_coords, list):
             box_coords = [0, 0, 0, 0]
 
+        # 🟢 Safely extract price field from DB model
+        extracted_price = getattr(p, "price", getattr(p, "suggested_price", getattr(p, "unit_price", None)))
+
         formatted_products.append({
             "id": str(p.id),
             "name": p.name,
@@ -151,8 +153,10 @@ async def get_detected_products(
             "category": p.category,
             "brand": p.brand,
             "sku": p.sku,
+            "price": extracted_price,
             "confidence_score": p.confidence_score,
-            "bounding_box": box_coords  
+            "bounding_box": box_coords,
+            "image_url": p.image_url  # 🟢 CRITICAL: Send this so cards can see the image
         })
         
     return formatted_products
@@ -165,7 +169,6 @@ async def get_analysis(
 ):
     """
     Vendor checks AI processing status.
-    Frontend polls this endpoint until status becomes completed or failed.
     """
     repo = AnalysisRepository(db)
     analysis = await repo.get_analysis(analysis_id)

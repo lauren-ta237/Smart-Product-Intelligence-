@@ -7,18 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_vendor, get_current_vendor_optional
 from app.core.database import get_db
 from app.modules.catalog.schemas import ProductApproveRequest
-from app.modules.catalog.service import ProductService
+from app.modules.products.service import ProductCRUDService
 from uuid import UUID
-from typing import List
+from typing import List, Union, Dict, Any
 
-# 1. DEFINE ROUTER FIRST
+# Define router with vendor catalog prefix
 router = APIRouter(
     prefix="/products",
     tags=["Products"]
 )
 
 
-@router.get("")
 @router.get("/")
 async def get_all_products(
     db: AsyncSession = Depends(get_db),
@@ -27,36 +26,19 @@ async def get_all_products(
     """
     Fetches vendor-scoped products for the frontend review dashboard.
     """
-    # If no vendor authenticated, return an empty list instead of 401 so the
-    # frontend can render an unauthenticated view without failing.
     if not vendor:
         return []
-    vendor_id = getattr(vendor, "id", None) or vendor.get("id")
+    vendor_id = vendor
 
-    db_results = []
     try:
-        service = ProductService(db)
-        db_results = await service.get_all_products(vendor_id=vendor_id)
+        service = ProductCRUDService(db)
+        db_results, _ = await service.list_products(vendor_id=vendor_id)
+        return db_results
     except Exception as e:
         print(f"[PRESENTATION WARNING] DB fetch failed: {str(e)}.")
+        return []
 
-    results = []
-    for row in db_results:
-        results.append({
-            "id": str(getattr(row, "id", "")),
-            "name": getattr(row, "name", "Scanned Asset"),
-            "category": getattr(row, "category", "Generic"),
-            "brand": getattr(row, "brand", "Generic"),
-            "description": getattr(row, "description", ""),
-            "market_sku": getattr(row, "market_sku", getattr(row, "sku", "N/A")),
-            "confidence_score": getattr(row, "confidence_score", 0.95),
-            "image_url": getattr(row, "image_url", ""),
-            "bounding_box": getattr(row, "bounding_box", None)
-        })
 
-    return results
-
-@router.post("")
 @router.post("/")
 async def save_analyzed_product(
     payload: dict,
@@ -66,47 +48,42 @@ async def save_analyzed_product(
     """
     Captures the live saving event directly from the frontend 'Save Analysis to Database' button.
     """
-    vendor_id = getattr(vendor, "id", None) or vendor.get("id")
+    vendor_id = vendor
     if not vendor_id:
         raise HTTPException(status_code=401, detail="Vendor authentication required.")
 
     try:
-        service = ProductService(db)
-        saved = await service.create_product(payload, vendor_id=vendor_id)
-        return {
-            "status": "success",
-            "data": {
-                "id": str(getattr(saved, "id", "")),
-                "name": getattr(saved, "name", ""),
-                "category": getattr(saved, "category", ""),
-                "brand": getattr(saved, "brand", ""),
-                "description": getattr(saved, "description", ""),
-                "market_sku": getattr(saved, "market_sku", ""),
-                "image_url": getattr(saved, "image_url", ""),
-                "bounding_box": getattr(saved, "bounding_box", None),
-                "approved": getattr(saved, "approved", False)
-            }
-        }
+        from app.modules.products.schemas import ProductCreate
+        service = ProductCRUDService(db)
+        
+        # Map raw dict to Pydantic schema
+        data = ProductCreate(**payload)
+        saved = await service.create_product(data, vendor_id=vendor_id)
+        return saved
     except Exception as e:
         print(f"[SAVE ERROR] Failed to persist analyzed product: {e}")
         raise HTTPException(status_code=500, detail="Unable to save product to database.")
 
+
 @router.post("/approve")
 async def approve_product(
-    data: ProductApproveRequest,
-    db: AsyncSession = Depends(get_db)
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    vendor = Depends(get_current_vendor)
 ):
-    try:
-        service = ProductService(db)
-        return await service.approve_product(data)
-    except Exception:
-        return {"status": "success", "message": "Demo bypass approval confirmation"}
+    # Reuse logical approval path from main router
+    from app.modules.products.router import approve_product as approve_fn
+    return await approve_product(payload, db, vendor)
+
 
 @router.patch("/{product_id}")
-async def update_product(
+async def update_product_direct(
     product_id: UUID,
-    data: ProductApproveRequest,
-    db: AsyncSession = Depends(get_db)
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    vendor = Depends(get_current_vendor)
 ):
-    service = ProductService(db)
-    return await service.update_product(product_id, data)
+    from app.modules.products.schemas import ProductUpdate
+    service = ProductCRUDService(db)
+    data = ProductUpdate(**payload)
+    return await service.update_product(product_id, data, vendor_id=vendor)

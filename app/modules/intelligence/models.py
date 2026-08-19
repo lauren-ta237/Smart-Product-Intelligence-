@@ -1,4 +1,3 @@
-# app/modules/intelligence/models.py
 import enum
 import uuid
 from sqlalchemy import String, ForeignKey, Integer, Float, Index
@@ -19,13 +18,14 @@ class AIAnalysis(BaseModel):
     __table_args__ = (
         Index("idx_analysis_image", "image_id"),
         Index("idx_analysis_status", "status"),
-        Index("idx_analysis_batch", "batch_id")  # 🌟 Added index for high-speed batch status lookups
+        Index("idx_analysis_batch", "batch_id")
     )
     __tablename__ = "ai_analyses"
 
+    # 🟢 CHANGED: Pointed foreign key to "users.id" instead of "vendors.id"
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), 
-        ForeignKey("vendors.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
     image_id: Mapped[uuid.UUID] = mapped_column(
@@ -34,7 +34,6 @@ class AIAnalysis(BaseModel):
         nullable=False
     )
     
-    # 🌟 NEW: Links individual analyses rows together under a unified multi-image batch transaction
     batch_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
@@ -45,7 +44,7 @@ class AIAnalysis(BaseModel):
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[AnalysisStatus] = mapped_column(
-        PG_ENUM(AnalysisStatus, name="analysis_status_enum"),
+        PG_ENUM(AnalysisStatus, name="analysis_status_enum", create_type=False),
         default=AnalysisStatus.PROCESSING,
         nullable=False
     )

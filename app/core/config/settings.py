@@ -1,3 +1,4 @@
+# app/core/config/settings.py
 from pathlib import Path
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,14 +22,21 @@ class Settings(BaseSettings):
     # AI provider selection
     AI_PROVIDER: str = "google"
 
-    # --- FACTORY REQUISITES (CRITICAL FIX) ---
-    # The factory explicitly looks for GOOGLE_AI_KEY. We route it through standard variants.
+    # --- GOOGLE CLIENT IDENTITY ---
+    GOOGLE_CLIENT_ID: str | None = None
+
+    # --- CLOUD STORAGE PARAMETERS ---
+    STORAGE_TYPE: str = "local"  # "local" or "s3"
+    AWS_ACCESS_KEY_ID: str | None = None
+    AWS_SECRET_ACCESS_KEY: str | None = None
+    AWS_BUCKET_NAME: str | None = None
+    AWS_REGION: str = "us-east-1"
+
+    # --- FACTORY REQUISITES ---
     GOOGLE_AI_KEY: str | None = Field(
         default=None,
         validation_alias=AliasChoices("GOOGLE_AI_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY")
     )
-    
-    # Keeping these to safeguard any legacy references in your codebase
     GOOGLE_API_KEY: str | None = Field(
         default=None, 
         validation_alias=AliasChoices("GOOGLE_API_KEY", "GOOGLE_AI_KEY", "GEMINI_API_KEY")
@@ -41,13 +49,11 @@ class Settings(BaseSettings):
     # Added Anthropic to clear the second factory exception
     ANTHROPIC_API_KEY: str | None = None
 
-    # --- FIELDS MAP TO UPPERCASE IN .ENV (FIXED CASING) ---
-    # Changed to UPPERCASE properties so Pydantic reads REDIS_URL, APP_NAME, etc., naturally from your .env
+    # --- FIELDS MAP TO UPPERCASE IN .ENV ---
     REDIS_URL: str = "redis://localhost:6379/0"
     APP_NAME: str = "Smart Product Intelligence Platform"
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = "http://localhost:5173"
-    STORAGE_TYPE: str = "local"
     MAX_UPLOAD_SIZE: int = 10
 
     # --- CONFIGURATION MODEL ---

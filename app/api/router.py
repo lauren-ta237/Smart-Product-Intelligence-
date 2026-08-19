@@ -1,39 +1,34 @@
+# app/api/router.py
 from fastapi import APIRouter
-from app.api.v1.auth import router as auth_router
-from app.api.v1 import vendors
-from app.api.v1 import images
-from app.api.v1 import products
-from app.api.v1 import dashboard 
 
-# Point directly to our intelligence router module
+from app.api.v1.auth import router as auth_router
+from app.api.v1 import dashboard, user
 from app.modules.intelligence.router import router as intelligence_router
-# Import the catalog router we created in app/modules/catalog/router.py
+from app.modules.media.router import router as media_router
+from app.modules.products.router import router as products_router
+from app.modules.orders.router import router as orders_router  # 🟢 IMPORT ORDERS ROUTER
+from app.modules.admin.router import router as admin_router
+from app.api.v1.developer import router as developer_router
 from app.modules.catalog.router import router as catalog_router
 
 api_router = APIRouter()
 
-# 🔐 Authentication Routes -> /api/v1/auth/login
-api_router.include_router(auth_router, prefix="/v1")
+# TASK 4: Ensure specific routes are registered before generic ones to prevent path conflicts.
+api_router.include_router(orders_router)
 
-# 👥 Vendor Management Routes -> /api/v1/vendors/...
-api_router.include_router(vendors.router, prefix="/v1")
+# 1. Auth & Users
+api_router.include_router(auth_router)
+api_router.include_router(user.router)
 
-# 📦 Product Catalog Management -> /api/v1/products/...
-api_router.include_router(products.router, prefix="/v1")
+# 2. Media & AI
+api_router.include_router(media_router)
+api_router.include_router(intelligence_router)
 
-# 📊 Analytics Dashboards -> /api/v1/dashboard/stats
-api_router.include_router(dashboard.router, prefix="/v1")
+# 3. Products & Catalog
+api_router.include_router(products_router)
+api_router.include_router(catalog_router, prefix="/inventory", tags=["Catalog"])
 
-# 🧠 AI Computer Vision Pipeline Routes
-api_router.include_router(intelligence_router, prefix="/v1")
-
-# 📸 Image Upload Infrastructure Routes
-api_router.include_router(images.router, prefix="/v1")
-
-# 🟢 Catalog Inventory Routes
-api_router.include_router(catalog_router)
-
-# 🚀 PRESENTATION SAFE ALIAS: 
-# This handles the frontend review layout hitting /api/products directly
-# without disrupting any existing v1 mobile/desktop internal endpoints!
-api_router.include_router(products.router)
+# 5. Dashboard & Admin
+api_router.include_router(dashboard.router)
+api_router.include_router(admin_router)
+api_router.include_router(developer_router)
