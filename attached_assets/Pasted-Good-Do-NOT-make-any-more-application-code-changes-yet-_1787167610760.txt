@@ -1,0 +1,162 @@
+Good. Do NOT make any more application-code changes yet.
+
+We are now moving to ENVIRONMENT SETUP and END-TO-END VALIDATION.
+
+The previous implementation has already made the intended image/runtime fixes. I want to verify them before changing anything else.
+
+STEP 1 — FRONTEND DEPENDENCIES
+
+From:
+
+smart_product_ai_frontend
+
+install the dependencies using the existing package-lock.json/package manager.
+
+Do NOT upgrade packages unnecessarily.
+Do NOT change package versions unless installation genuinely requires it.
+Do NOT rewrite package.json.
+
+Then run the existing frontend build command from the frontend directory.
+
+If the build fails:
+
+- show me the exact error
+- distinguish dependency errors from actual TypeScript/code errors
+- do NOT start making unrelated code changes
+- do NOT automatically rewrite components
+
+STEP 2 — BACKEND DEPENDENCIES
+
+Verify that the backend dependencies from requirements.txt are installed.
+
+Do not add random packages.
+
+Then verify:
+
+python -c "from app.main import app; print('backend import ok')"
+
+STEP 3 — CHECK ENVIRONMENT VARIABLES
+
+Before starting the application, inspect which required environment variables are missing.
+
+The application may require:
+
+DATABASE_URL
+JWT_SECRET
+GEMINI_API_KEY
+FRONTEND_URL
+VITE_BACKEND_ORIGIN
+VITE_API_URL
+VITE_DEV_BACKEND_URL
+
+Do NOT expose any secret values in your response.
+
+Only tell me:
+- which variables are missing
+- which variables already exist
+- which are optional
+- which are required for the app to start
+
+Do NOT invent credentials.
+
+STEP 4 — DO NOT MODIFY BUSINESS LOGIC
+
+At this stage, do not modify:
+
+- product models
+- product save logic
+- AI processing
+- authentication
+- vendor workflow
+- buyer workflow
+- admin workflow
+- orders
+- checkout
+- database schema
+
+We are only trying to get the existing application running.
+
+STEP 5 — START THE APPLICATION
+
+Once dependencies and required environment variables are available, start the existing backend and frontend workflows using the project's existing configuration.
+
+Do not create a new architecture.
+
+I need to be able to open the running frontend in the browser.
+
+STEP 6 — TEST STATIC IMAGE SERVING BEFORE TESTING AI
+
+Before uploading anything through the UI, inspect the existing uploads directory.
+
+If there is already a real image in:
+
+uploads/
+
+use that image only for a static-serving test.
+
+Test:
+
+/uploads/<existing-filename>
+
+from the browser/application.
+
+The important result is:
+
+HTTP 200
+AND
+the browser displays the actual image.
+
+If there are no existing images, tell me that and do NOT invent one.
+
+STEP 7 — TEST THE IMAGE URL
+
+Verify that the frontend image utility transforms:
+
+uploads/example.jpg
+
+into the correct browser URL for the current environment.
+
+Verify it does NOT produce:
+
+http://localhost:8000/uploads/...
+
+unless localhost is genuinely the current local backend.
+
+For Replit same-origin deployment, it should use the current application origin.
+
+STEP 8 — TEST API
+
+Open the products endpoint from the running application.
+
+Verify that an existing product response still contains:
+
+image_url
+
+and that it remains associated with the correct:
+
+id
+name
+image_url
+
+Do not alter database data during this test.
+
+STEP 9 — REPORT ONLY
+
+After completing these steps, stop and report:
+
+1. Frontend dependency installation result
+2. Frontend build result
+3. Backend dependency result
+4. Backend import result
+5. Environment variables that are missing (names only, never values)
+6. Running frontend URL
+7. Running backend URL
+8. Static image test result
+9. Products API test result
+10. Any exact remaining blocker
+
+DO NOT make additional fixes unless a failure is directly required to complete these validation steps.
+
+If something fails, STOP at that failure and tell me exactly what failed rather than guessing.
+
+We will handle the next failure separately.
