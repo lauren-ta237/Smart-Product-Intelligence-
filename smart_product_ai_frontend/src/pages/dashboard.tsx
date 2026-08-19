@@ -466,7 +466,20 @@ export default function Dashboard() {
                       <div key={p.id} className="bg-slate-900/60 border border-white/5 p-4 rounded-2xl space-y-3">
                       <div className="h-32 bg-slate-950 rounded-xl overflow-hidden border border-white/5 relative flex items-center justify-center">
                         <img src={formatImageUrl(p.imageUrl)} alt={p.name} className="max-w-none transition-transform duration-300" style={zoomStyle}
-                          onError={(e) => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80"; }}
+                          onError={(e) => {
+                            const image = e.currentTarget;
+                            const requestedUrl = image.currentSrc || image.src;
+                            console.error("[Marketplace image load failed]", {
+                              productId: p.id,
+                              productName: p.name,
+                              storedImageUrl: p.imageUrl,
+                              requestedUrl,
+                            });
+                            if (image.dataset.fallbackApplied !== "true") {
+                              image.dataset.fallbackApplied = "true";
+                              image.src = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80";
+                            }
+                          }}
                         />
                       </div>
                       <div>

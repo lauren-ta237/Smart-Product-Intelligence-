@@ -1,6 +1,7 @@
 import os
 import uuid
 from starlette.concurrency import run_in_threadpool
+from app.core.config.settings import settings
 from .storage import StorageProvider
 
 class LocalStorage(StorageProvider):
@@ -10,7 +11,7 @@ class LocalStorage(StorageProvider):
     Returns the path relative to the project root to ensure correct static routing.
     """
     def __init__(self):
-        self.folder = "uploads"
+        self.folder = settings.UPLOADS_DIR
         os.makedirs(self.folder, exist_ok=True)
 
     async def upload(self, file, filename: str):

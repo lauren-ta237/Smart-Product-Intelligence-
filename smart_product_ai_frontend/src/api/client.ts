@@ -1,5 +1,6 @@
 // smart_product_ai_frontend/src/api/client.ts
 import axios from "axios";
+import { API_BASE_URL } from "./config";
 
 /*
  Central HTTP client.
@@ -7,7 +8,7 @@ import axios from "axios";
  🟢 The baseURL includes the version prefix /v1.
 */
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1",
+  baseURL: import.meta.env.VITE_API_URL || API_BASE_URL,
   timeout: 60000,
   headers: {
     "Content-Type": "application/json"

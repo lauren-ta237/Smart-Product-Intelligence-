@@ -1,0 +1,265 @@
+We are now moving from diagnosis to a SAFE, MINIMAL FIX.
+
+I have an existing Smart Product AI application. This is NOT a new project and I do NOT want a rewrite.
+
+Your previous investigation identified these confirmed issues:
+
+1. The frontend imports:
+   src/api/imageUtils
+
+   but the current project contains:
+   src/pages/imageUtils.ts
+
+2. The image URL formatter currently hardcodes:
+   http://localhost:8000/
+
+3. The frontend API client also defaults to:
+   http://localhost:8000/api/v1
+
+4. The backend serves uploads using:
+   app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+5. LocalStorage also uses the relative:
+   uploads/
+   directory.
+
+6. CORS currently contains localhost origins but does not properly account for the Replit frontend origin.
+
+7. The buyer dashboard has an Unsplash onError fallback that hides the real image-loading failure.
+
+8. Your investigation indicates that the image path DOES propagate through:
+   ProductImage.storage_url
+   → AIAnalysis.image_url
+   → DetectedProduct.image_url
+   → Product.image_url
+   → GET /products
+   so DO NOT redesign or replace this existing data flow.
+
+IMPORTANT SAFETY RULES:
+
+DO NOT:
+- rewrite the application
+- redesign the UI
+- change authentication
+- change vendor logic
+- change buyer logic
+- change admin logic
+- change orders
+- change checkout/payment logic
+- change AI detection logic
+- change database schema
+- delete files
+- rename unrelated files
+- remove existing functionality
+- replace PostgreSQL with another database
+- replace the storage architecture
+- modify unrelated modules
+- make broad refactors
+- invent a new image system
+
+ONLY fix what is necessary for the IMAGE DISPLAY BUG and for the existing application to run correctly in Replit.
+
+Before modifying anything, inspect these exact files:
+
+Backend:
+- app/main.py
+- app/core/config/settings.py
+- app/core/database.py
+- app/modules/media/local_storage.py
+- app/modules/media/service.py
+- app/modules/media/router.py
+- app/modules/media/models.py
+- app/modules/products/service.py
+- app/modules/products/router.py
+- app/modules/products/models.py
+- app/modules/products/schemas.py
+
+Frontend:
+- smart_product_ai_frontend/src/api/client.ts
+- smart_product_ai_frontend/src/api/products.ts
+- smart_product_ai_frontend/src/api/images.ts
+- smart_product_ai_frontend/src/pages/dashboard.tsx
+- smart_product_ai_frontend/src/pages/imageUtils.ts
+- smart_product_ai_frontend/src/features/analysis/AnalysisViewer.tsx
+- smart_product_ai_frontend/src/features/analysis/ProductCard.tsx
+- smart_product_ai_frontend/src/pages/Review.tsx
+- smart_product_ai_frontend/package.json
+- smart_product_ai_frontend/vite.config.* if present
+
+Also inspect:
+- requirements.txt
+- package.json if present
+- .replit
+- README.md
+- any existing Replit configuration
+
+FIRST TASK:
+
+Determine the safest minimal implementation for the image URL utility.
+
+There is currently a mismatch between the imports expecting:
+
+src/api/imageUtils
+
+and the existing file:
+
+src/pages/imageUtils.ts
+
+Do NOT blindly duplicate code.
+
+Determine whether the correct solution is:
+A. moving the existing utility,
+B. creating a small compatibility module at src/api/imageUtils.ts,
+C. updating the existing imports,
+or another minimal solution.
+
+Choose the solution that changes the fewest files and preserves existing behavior.
+
+SECOND TASK:
+
+Fix the hardcoded localhost problem.
+
+The frontend must NOT construct production/Replit image URLs using:
+
+http://localhost:8000/
+
+The solution must support:
+- local development
+- Replit development/preview
+- future deployment
+
+Prefer an environment-based or same-origin approach consistent with the existing architecture.
+
+Do not hardcode a Replit-specific URL into the source code.
+
+The API client and image URL utility must use the same backend-origin strategy.
+
+THIRD TASK:
+
+Fix image URL normalization.
+
+The canonical database representation must remain:
+
+uploads/<filename>
+
+with forward slashes.
+
+The frontend should correctly handle:
+- uploads/file.jpg
+- /uploads/file.jpg
+- full HTTP/HTTPS URLs
+- localhost URLs from local development
+- Windows backslashes such as uploads\file.jpg
+
+Do not store absolute Windows filesystem paths in the database.
+
+Do not change the Product image data model.
+
+FOURTH TASK:
+
+Fix the backend upload/static path reliability.
+
+The backend and LocalStorage must point to the SAME physical uploads directory regardless of the process working directory.
+
+Use a safe project-root-based Path configuration.
+
+Do not create a second uploads directory.
+
+Do not move existing uploaded files unless absolutely necessary.
+
+Do not delete the existing uploads directory.
+
+FIFTH TASK:
+
+Fix CORS only as necessary for the actual frontend/backend configuration.
+
+Do not use a broad insecure wildcard unless the existing architecture explicitly requires it.
+
+Use environment/configuration where appropriate.
+
+SIXTH TASK:
+
+Temporarily improve image-load diagnostics.
+
+The current buyer fallback image can hide the real problem.
+
+Do not permanently remove the fallback unless necessary.
+
+Instead, make image failures observable through console logging and/or a safe error state so we can verify the actual image URL being requested.
+
+The important thing is that a failed real image must not silently make us believe the fallback is the actual product image.
+
+SEVENTH TASK:
+
+DO NOT change the existing product-label association logic.
+
+Each product's:
+- id
+- name
+- price
+- image_url
+- bounding_box
+
+must remain associated with the same product object.
+
+For multiple detections from one source image, preserve the existing intended behavior where the source image URL can be shared while each detected product retains its own bounding_box.
+
+EIGHTH TASK:
+
+After making the minimal changes, run validation.
+
+At minimum verify:
+
+1. Backend imports successfully.
+2. Frontend TypeScript compiles.
+3. Frontend builds successfully.
+4. No unresolved import remains for imageUtils.
+5. API client no longer depends on an unusable hardcoded localhost backend in Replit.
+6. Static `/uploads/<filename>` resolves against the same physical uploads directory used by LocalStorage.
+7. No unrelated routes were broken.
+8. Existing product API still returns image_url.
+9. Buyer dashboard still receives the product name and image_url together.
+10. Existing vendor/admin/buyer code was not unnecessarily modified.
+
+VERY IMPORTANT:
+
+Before editing, create a clear list of the exact files you intend to modify.
+
+Only modify files directly necessary for this image-display/runtime problem.
+
+After editing, show me:
+
+1. EXACT FILES CHANGED
+2. WHAT WAS CHANGED IN EACH FILE
+3. WHY EACH CHANGE WAS NECESSARY
+4. WHAT WAS NOT CHANGED
+5. TESTS/COMMANDS RUN
+6. TEST RESULTS
+7. ANY REMAINING BLOCKER
+8. EXACT STEPS I should perform manually to test:
+
+Vendor:
+Upload real product image
+→ AI analysis
+→ Confirm & Save
+→ verify Product.image_url
+→ open buyer dashboard
+
+Buyer:
+Open marketplace
+→ locate uploaded product
+→ verify the actual uploaded image appears
+→ verify the product name matches the image
+→ verify different products show their own correct images.
+
+Do NOT claim the bug is fixed merely because the code compiles.
+
+We need to verify the actual browser image request and make sure:
+
+uploads/<filename>
+→ reachable HTTP URL
+→ actual uploaded image
+
+works end-to-end.
+
+Do not make any changes outside this scope.

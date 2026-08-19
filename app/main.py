@@ -10,18 +10,19 @@ from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.database import init_db
+from app.core.config.settings import settings
 from app.core.logging import setup_logging
 
 # Load environmental configurations explicitly 
 load_dotenv()
 
 # Ensure uploads directory exists BEFORE mounting StaticFiles at module load time
-os.makedirs("uploads", exist_ok=True)
+os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Auto-create local file storage folder to ensure directory exists across all platforms
-    os.makedirs("uploads", exist_ok=True)
+    os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
     # Automatically checks your Postgres instance and builds tables if missing
     await init_db()
     try:
@@ -46,7 +47,8 @@ app.add_middleware(
         "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://localhost:3000",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
+        *[origin.strip() for origin in settings.FRONTEND_URL.split(",") if origin.strip()],
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -62,7 +64,7 @@ async def value_error_handler(request: Request, exc: ValueError):
     )
 
 # Mount static asset disk space natively for uploaded files
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
 
 setup_logging()
 

@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = "http://localhost:5173"
     MAX_UPLOAD_SIZE: int = 10
+    UPLOADS_DIR: Path = BASE_DIR / "uploads"
 
     # --- CONFIGURATION MODEL ---
     model_config = SettingsConfigDict(
