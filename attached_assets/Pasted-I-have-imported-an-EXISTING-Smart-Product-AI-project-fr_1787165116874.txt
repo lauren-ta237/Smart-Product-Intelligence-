@@ -1,0 +1,185 @@
+I have imported an EXISTING Smart Product AI project from my private GitHub repository.
+
+IMPORTANT:
+DO NOT MODIFY ANY FILES YET.
+
+I want you to first inspect and understand the existing application exactly as it currently exists.
+
+This is an existing full-stack application. Do not rebuild it, redesign it, simplify it, or replace existing architecture.
+
+The system contains:
+
+- FastAPI/Python backend
+- React/TypeScript frontend
+- PostgreSQL database
+- Vendor dashboard
+- Buyer marketplace/dashboard
+- Admin dashboard
+- Product image upload
+- AI product analysis
+- Product detection
+- Product persistence
+- Orders and checkout
+
+My current critical bug concerns PRODUCT IMAGES.
+
+The current flow is:
+
+Vendor uploads an actual product image
+→ image is stored
+→ AI analysis runs
+→ detected products are produced
+→ vendor confirms and saves products
+→ buyer opens marketplace
+→ buyer should see the actual uploaded product image
+→ instead the image sometimes does not display, displays a static fallback image, or the image appears associated with the wrong label.
+
+I have previously observed image URLs such as:
+
+uploads/f1b2c3d4.jpg
+
+and at one point:
+
+uploads\f1b2c3d4.jpg
+
+I have also observed:
+
+GET http://localhost:8000/uploads/<filename>
+
+returning HTTP 404.
+
+However, DO NOT assume that any previous diagnosis is correct.
+
+First inspect the ACTUAL imported code.
+
+Do not change anything.
+
+Specifically inspect and trace:
+
+1. The project structure.
+
+2. The FastAPI application entry point.
+
+3. The frontend entry point.
+
+4. The backend dependency configuration.
+
+5. The frontend dependency configuration.
+
+6. How the backend is started.
+
+7. How the frontend is started.
+
+8. How environment variables are expected to be configured.
+
+9. How PostgreSQL is configured.
+
+10. How uploaded images are stored physically.
+
+11. The LocalStorage/media storage implementation.
+
+12. ProductImage and its image/storage fields.
+
+13. AIAnalysis and its image fields.
+
+14. DetectedProduct and its image fields.
+
+15. Product and its image fields.
+
+16. The endpoint responsible for saving analyzed products.
+
+17. The frontend code that sends analyzed products to the backend.
+
+18. The backend code that creates/updates Product records.
+
+19. The GET products endpoint used by the buyer dashboard.
+
+20. The frontend API code that retrieves products.
+
+21. The buyer dashboard image rendering logic.
+
+22. Any image URL formatting/helper functions.
+
+23. Any image onError/fallback logic.
+
+24. FastAPI StaticFiles configuration.
+
+25. The actual relationship between the physical uploads directory and the URL used by the browser.
+
+26. Whether Windows path separators are being introduced anywhere.
+
+27. Whether image_url is correctly persisted from upload through Product.
+
+28. Whether the API returns the correct image_url.
+
+29. Whether the browser can actually request that URL successfully.
+
+30. Whether there is any possibility of multiple products from one analyzed image receiving incorrect image associations.
+
+I want a COMPLETE DATA-FLOW TRACE:
+
+UPLOAD
+→ STORAGE
+→ ProductImage
+→ AIAnalysis
+→ DetectedProduct
+→ CONFIRM/SAVE
+→ Product
+→ GET /products
+→ Buyer frontend
+→ image URL formatter
+→ <img>
+→ HTTP request
+→ uploaded image
+
+For every stage, tell me:
+
+- File
+- Function/component
+- Input
+- Output
+- Relevant field names
+- Whether the data is correct
+- If incorrect, exactly where it becomes incorrect
+
+Also inspect the actual Replit runtime configuration and determine what is required to run this existing project in Replit.
+
+DO NOT modify source code.
+DO NOT install random packages.
+DO NOT change the database schema.
+DO NOT change authentication.
+DO NOT change payments.
+DO NOT change vendor/buyer flows.
+DO NOT redesign the UI.
+DO NOT refactor unrelated code.
+DO NOT delete existing files.
+
+At the end give me:
+
+A. Current architecture
+
+B. Backend start command
+
+C. Frontend start command
+
+D. Required environment variables/secrets
+
+E. Database requirements
+
+F. Image storage configuration
+
+G. Static file serving configuration
+
+H. Complete image data flow
+
+I. Exact current failure point(s)
+
+J. Evidence from the actual code supporting each failure point
+
+K. What needs to be configured in Replit before testing
+
+L. A safe minimal fix plan
+
+Again: DO NOT MODIFY ANY FILES YET.
+
+Only inspect, diagnose, and report.

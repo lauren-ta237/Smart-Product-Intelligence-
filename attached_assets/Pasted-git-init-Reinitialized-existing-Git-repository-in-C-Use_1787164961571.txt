@@ -1,0 +1,67 @@
+git init 
+Reinitialized existing Git repository in C:/Users/Laurenta/Desktop/smart_product_ai/.git/
+(.venv) PS C:\Users\Laurenta\Desktop\smart_product_ai> git add .
+warning: in the working copy of 'migrations/env.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'smart_product_ai_frontend/tsconfig.app.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'smart_product_ai_frontend/tsconfig.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'fix_vendor.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migrations/versions/392ab61b482e_add_media_and_product_tables.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migrations/versions/988348837466_refactor_vendor_to_user_model.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migrations/versions/b1d5f8776aeb_create_vendor_table.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migrations/versions/b6e78ff7344c_create_orders_order_items_and_shipments_.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'smart_product_ai_frontend/src/pages/AdminDashboard.tsx', LF will be replaced by CRLF the next time Git touches it
+(.venv) PS C:\Users\Laurenta\Desktop\smart_product_ai> git commit -m "this is the files containing the admin, vendor and buyer full system"
+[main 372d37d] this is the files containing the admin, vendor and buyer full system
+ 97 files changed, 25299 insertions(+), 2501 deletions(-)
+ create mode 100644 app/api/v1/developer.py
+ create mode 100644 app/api/v1/user.py
+ delete mode 100644 app/api/v1/vendors.py
+ create mode 100644 app/db/base.py
+ create mode 100644 app/modules/admin/models.py
+ create mode 100644 app/modules/admin/router.py
+ create mode 100644 app/modules/admin/schemas.py
+ create mode 100644 app/modules/intelligence/websocket_manager.py
+ create mode 100644 app/modules/media/s3_storage.py
+ create mode 100644 app/modules/orders/models.py
+ create mode 100644 app/modules/orders/router.py
+ create mode 100644 app/modules/orders/schemas.py
+ create mode 100644 app/modules/orders/services.py
+ create mode 100644 app/modules/products/models.py
+ create mode 100644 app/modules/products/router.py
+ create mode 100644 app/modules/products/schemas.py
+ create mode 100644 app/modules/products/service.py
+ create mode 100644 bundle_code.py
+ create mode 100644 fix_products_fk.py
+ create mode 100644 fix_vendor.py
+ create mode 100644 full_stack_context.txt
+ create mode 100644 migrations/versions/392ab61b482e_add_media_and_product_tables.py
+ create mode 100644 migrations/versions/988348837466_refactor_vendor_to_user_model.py
+ create mode 100644 migrations/versions/b1d5f8776aeb_create_vendor_table.py
+ create mode 100644 migrations/versions/b6e78ff7344c_create_orders_order_items_and_shipments_.py
+ create mode 100644 smart_product_ai_frontend/src/App.tsx
+ create mode 100644 smart_product_ai_frontend/src/api/orders.ts
+ create mode 100644 smart_product_ai_frontend/src/app/buyer/orders/page.tsx
+ create mode 100644 smart_product_ai_frontend/src/components/CartDrawer.tsx
+ create mode 100644 smart_product_ai_frontend/src/components/ProductDetectionViewer.tsx
+ create mode 100644 smart_product_ai_frontend/src/components/products/ProductCreateForm.tsx
+ create mode 100644 smart_product_ai_frontend/src/components/vendor/VendorOrders.tsx
+ create mode 100644 smart_product_ai_frontend/src/hooks/useProducts.ts
+ create mode 100644 smart_product_ai_frontend/src/pages/AdminDashboard.tsx
+ create mode 100644 smart_product_ai_frontend/src/pages/CheckoutPage.tsx
+ create mode 100644 smart_product_ai_frontend/src/pages/imageUtils.ts
+ create mode 100644 smart_product_ai_frontend/src/pages/utils.ts
+ create mode 100644 smart_product_ai_frontend/src/store/cart.ts
+ create mode 100644 smart_product_ai_frontend/src/store/wishlist.ts
+ create mode 100644 tests/test_identity_roles.py
+ create mode 100644 tmp_batch_repro.py
+ create mode 100644 tmp_probe.py
+(.venv) PS C:\Users\Laurenta\Desktop\smart_product_ai> git push
+Enumerating objects: 224, done.
+Counting objects: 100% (224/224), done.
+Delta compression using up to 4 threads
+Compressing objects: 100% (127/127), done.
+Writing objects: 100% (137/137), 225.60 KiB | 1.38 MiB/s, done.
+Total 137 (delta 38), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (38/38), completed with 35 local objects.
+To https://github.com/lauren-ta237/Smart-Product-Intelligence-.git
+   84b830e..372d37d  main -> main
