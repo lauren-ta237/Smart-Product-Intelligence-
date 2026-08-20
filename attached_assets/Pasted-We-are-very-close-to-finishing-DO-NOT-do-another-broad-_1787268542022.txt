@@ -1,0 +1,150 @@
+We are very close to finishing. DO NOT do another broad investigation and DO NOT stop after the next individual runtime error.
+
+I have limited Replit quota, so this is a FINAL focused repair-and-validation pass.
+
+CURRENT STATE:
+
+1. Frontend builds successfully:
+   npm run build
+   ✓ 155 modules transformed
+   ✓ built successfully
+
+2. Review.tsx syntax problem has already been fixed.
+
+3. Product CRUD types have already been restored in:
+   smart_product_ai_frontend/src/types/products.ts
+
+4. useProducts.ts has already been corrected to import ProductInput from the shared types.
+
+5. JWT_SECRET has been configured through Replit Secrets.
+
+6. app/core/database.py was minimally changed so:
+   postgresql://
+   becomes:
+   postgresql+asyncpg://
+
+7. This successfully moved SQLAlchemy from psycopg2 to asyncpg.
+
+CURRENT ERROR:
+
+asyncpg rejects the existing PostgreSQL connection parameter:
+
+TypeError: connect() got an unexpected keyword argument 'sslmode'
+
+The existing DATABASE_URL contains sslmode, which is valid for psycopg2 but must be handled correctly for asyncpg.
+
+YOUR TASK:
+
+Fix the CURRENT DATABASE/asyncpg compatibility issue only, while preserving the existing database architecture.
+
+IMPORTANT:
+- Do NOT rewrite the database layer.
+- Do NOT change models.
+- Do NOT change migrations.
+- Do NOT change authentication.
+- Do NOT change product logic.
+- Do NOT change frontend image logic.
+- Do NOT create a new database.
+- Do NOT remove database SSL/security requirements blindly.
+- Do NOT change unrelated files.
+- Preserve the existing DATABASE_URL value and credentials.
+- Handle the sslmode parameter in a way compatible with asyncpg.
+- Make the smallest production-safe correction possible.
+
+After fixing the asyncpg connection configuration, DO NOT stop at the first minor runtime issue.
+
+Continue automatically through this validation sequence:
+
+PHASE 1 — BACKEND
+1. Start:
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+2. Verify the backend actually starts.
+
+3. Call the health endpoint and confirm HTTP success.
+
+PHASE 2 — STATIC IMAGES
+4. Inspect the existing project-root uploads directory.
+5. Confirm exactly which directory FastAPI StaticFiles is serving.
+6. If there is no image available, create ONLY a harmless temporary test image for validation if necessary.
+7. Test:
+   GET /uploads/<test-image>
+8. Confirm it returns HTTP 200.
+9. Do not permanently alter application behavior just for this test.
+
+PHASE 3 — PRODUCTS API
+10. Test GET /api/v1/products.
+11. Confirm the endpoint starts successfully.
+12. Confirm the response schema matches the frontend Product type.
+13. Do not modify product behavior unless an actual incompatibility prevents the application from running.
+
+PHASE 4 — IMAGE PIPELINE
+Trace the complete existing image flow:
+
+vendor upload
+→ ProductImage.storage_url
+→ AIAnalysis.image_url
+→ DetectedProduct.image_url
+→ batch-update
+→ Product.image_url
+→ GET /api/v1/products
+→ dashboard.tsx
+→ formatImageUrl
+→ /uploads/<filename>
+→ browser
+
+Specifically verify that:
+- image paths use forward slashes
+- uploads/<filename> is stored consistently
+- Product.image_url is persisted
+- the frontend does not double-prefix /uploads
+- Windows backslashes cannot break the URL
+- the buyer dashboard receives the correct image_url
+
+PHASE 5 — FRONTEND
+14. Start the frontend with the existing project command.
+15. Verify it can communicate with the backend.
+16. Verify the product API is consumed successfully.
+17. Verify the image URL construction is correct.
+
+PHASE 6 — FINAL AUDIT
+Before making any additional changes, compare the final image flow against the original bug:
+
+ORIGINAL BUG:
+Vendor uploads image → AI analysis works → vendor sees image → buyer sees static/wrong image or broken image.
+
+The final desired behavior is:
+
+Vendor uploads Product A image
+→ AI analyzes Product A
+→ Product A retains its actual uploaded image
+→ vendor confirms/saves
+→ Product A.image_url is persisted
+→ buyer API returns Product A with Product A.image_url
+→ frontend constructs the correct /uploads/<filename> URL
+→ FastAPI serves the actual uploaded file
+→ buyer sees Product A's actual image
+→ Product A's name/label remains attached to Product A's own image.
+
+IMPORTANT QUOTA RULE:
+
+Do not stop after fixing sslmode if another obvious startup/runtime issue appears.
+
+If another error occurs, diagnose and fix it only if it is clearly required for the application to start or for the image pipeline to work.
+
+Do not make speculative refactors.
+
+At the end give me ONE concise final report containing:
+
+1. Files changed
+2. Exact reason each file was changed
+3. Backend startup result
+4. Health endpoint result
+5. Static image serving result
+6. Products API result
+7. Frontend build/start result
+8. Image pipeline result
+9. Whether the original buyer-dashboard image bug is now fixed
+10. Any remaining blocker, ONLY if there is a genuine blocker
+
+Do not waste quota explaining things before acting. Start by fixing the asyncpg sslmode issue and continue through the validation sequence.

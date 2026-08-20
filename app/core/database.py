@@ -3,16 +3,25 @@ import os
 import importlib
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config.settings import settings
 
 # Configure the async database engine
-database_url = settings.DATABASE_URL
-if database_url.startswith("postgresql://"):
-    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+database_url = make_url(settings.DATABASE_URL)
+if database_url.drivername == "postgresql":
+    database_url = database_url.set(drivername="postgresql+asyncpg")
+
+sslmode = database_url.query.get("sslmode")
+if sslmode is not None:
+    database_url = database_url.difference_update_query(["sslmode"])
+    database_connect_args = {"ssl": sslmode}
+else:
+    database_connect_args = {}
 
 engine = create_async_engine(
     database_url,
+    connect_args=database_connect_args,
     echo=True,
     pool_size=10,
     max_overflow=20,
@@ -121,6 +130,14 @@ async def init_db():
 
         # Force registration of all models on Base.metadata before create_all.
         import app.models_registry
+        from app.modules.intelligence.models import AIAnalysis
+
+        # Ensure the explicitly managed analysis enum exists before its table is created.
+        analysis_status_enum = AIAnalysis.__table__.c.status.type
+        async with engine.begin() as conn:
+            await conn.run_sync(
+                lambda sync_conn: analysis_status_enum.create(sync_conn, checkfirst=True)
+            )
 
         # Creates all tables cleanly with the latest entity structure.
         print("[INIT_DB] Creating database tables if missing...")
