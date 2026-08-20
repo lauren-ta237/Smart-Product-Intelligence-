@@ -1,0 +1,208 @@
+The frontend build now succeeds and there are no remaining build blockers.
+
+Now move to RUNTIME VALIDATION of the existing image system.
+
+IMPORTANT:
+Do NOT make application-code changes yet.
+
+We need to prove exactly where the image flow succeeds or fails.
+
+==================================================
+1. START THE BACKEND
+==================================================
+
+Start the existing FastAPI backend using the project's normal startup command.
+
+Do not change backend code just to make it start.
+
+Confirm the actual backend URL and port.
+
+==================================================
+2. VERIFY THE UPLOAD DIRECTORY
+==================================================
+
+Inspect the actual project-root uploads directory.
+
+Confirm:
+
+- uploads/ exists
+- it is the same directory used by LocalStorage
+- it is the same directory mounted by FastAPI StaticFiles
+- whether it currently contains image files
+
+Do not create fake product data or fake images.
+
+==================================================
+3. TEST STATIC IMAGE SERVING
+==================================================
+
+If an existing image file is present in uploads/, select one actual filename.
+
+Test:
+
+GET /uploads/<actual-filename>
+
+For example:
+
+http://localhost:8000/uploads/example.jpg
+
+Record:
+
+- HTTP status
+- whether the response is actually an image
+- the exact URL tested
+
+IMPORTANT:
+
+Do not assume this works just because StaticFiles is configured.
+
+We need an actual request result.
+
+==================================================
+4. INSPECT PRODUCTS API
+==================================================
+
+Call the existing:
+
+GET /api/v1/products
+
+Do not modify the API.
+
+Inspect the returned product records.
+
+For products that have an image, report:
+
+product name
+product id
+image_url
+
+Do NOT expose secrets, tokens, passwords, or API keys.
+
+==================================================
+5. CHECK IMAGE URL CONSTRUCTION
+==================================================
+
+For one real product with an image_url, determine the exact browser URL that the frontend will request.
+
+Verify that it does NOT produce:
+
+/uploads/uploads/...
+
+and does NOT contain:
+
+\
+
+The expected format should be equivalent to:
+
+http://<backend-host>/uploads/<filename>
+
+==================================================
+6. START THE FRONTEND
+==================================================
+
+Start the existing frontend using its configured development command.
+
+Do not redesign or modify the frontend.
+
+Confirm the frontend URL.
+
+==================================================
+7. DO NOT INVENT A TEST
+==================================================
+
+If the application requires authentication to reach the buyer dashboard, use the existing configured authentication flow if the environment provides it.
+
+If you cannot authenticate or cannot perform the vendor upload flow in the Replit environment, STOP and tell me exactly what is missing.
+
+Do NOT create fake credentials.
+Do NOT bypass authentication.
+Do NOT modify authentication.
+
+==================================================
+8. IMPORTANT IMAGE TEST
+==================================================
+
+If the existing environment allows the complete flow:
+
+Vendor:
+Upload a real image
+→ wait for AI analysis
+→ Confirm & Save
+
+Then:
+
+Buyer:
+Open marketplace
+→ locate that product
+→ verify the actual uploaded image is displayed.
+
+We need to verify that the image displayed is the uploaded image, NOT an Unsplash/static fallback.
+
+==================================================
+9. BROWSER/NETWORK EVIDENCE
+==================================================
+
+If browser testing is available, inspect the image request.
+
+Record:
+
+- requested image URL
+- HTTP status
+- whether it returned the uploaded image
+- whether an onError fallback was triggered
+
+==================================================
+10. ABSOLUTE RULE
+==================================================
+
+DO NOT modify application code during this validation.
+
+If something fails, STOP at the first failure and report:
+
+1. Exact step
+2. Exact command/request
+3. Exact result
+4. HTTP status if applicable
+5. Relevant error
+6. Most likely location of the failure
+
+Do not guess.
+
+Do not fix anything yet.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+BACKEND:
+- startup result
+- URL/port
+
+UPLOADS:
+- physical directory
+- image files found
+
+STATIC FILE TEST:
+- exact URL
+- HTTP status
+- result
+
+PRODUCT API:
+- endpoint
+- image_url result
+
+FRONTEND:
+- startup result
+- URL
+
+END-TO-END:
+- vendor upload possible? YES/NO
+- buyer dashboard reachable? YES/NO
+- real image displayed? YES/NO
+
+FIRST FAILURE:
+- exact failure and location
+
+Do not make code changes during this task.
