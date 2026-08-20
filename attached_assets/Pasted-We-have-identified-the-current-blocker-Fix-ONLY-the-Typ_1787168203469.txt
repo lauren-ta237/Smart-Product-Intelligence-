@@ -1,0 +1,80 @@
+We have identified the current blocker. Fix ONLY the TypeScript/TSX syntax errors in:
+
+smart_product_ai_frontend/src/pages/Review.tsx
+
+The build reports 29 syntax errors beginning around line 197 and continuing through approximately line 264, including:
+
+- TS1005: ';' expected
+- TS1128: Declaration or statement expected
+- TS1161: Unterminated regular expression literal
+
+IMPORTANT:
+
+This is an existing syntax/build blocker that prevents us from validating the image-display fix.
+
+DO NOT change anything related to the image system in this task.
+
+DO NOT modify:
+
+- imageUtils
+- image URL handling
+- uploads
+- LocalStorage
+- StaticFiles
+- CORS
+- Product.image_url
+- products service
+- dashboard image rendering
+- AI analysis
+- authentication
+- vendor workflow
+- buyer workflow
+- admin workflow
+- orders
+- checkout
+- database schema
+
+TASK:
+
+1. Read the ENTIRE current:
+   smart_product_ai_frontend/src/pages/Review.tsx
+
+2. Inspect the JSX/TSX structure around lines 180–280.
+
+3. Identify the actual syntax problem.
+
+4. Fix the smallest possible portion of Review.tsx.
+
+5. Preserve the existing Review page's functionality, UI, state, props, API calls, and business logic.
+
+6. Do NOT rewrite the component.
+
+7. Do NOT remove functionality simply to make TypeScript compile.
+
+8. Do NOT suppress errors with `any`, `@ts-ignore`, `@ts-nocheck`, comments, or similar workarounds.
+
+9. After the minimal correction, run:
+
+cd smart_product_ai_frontend
+npm run build
+
+10. If the build produces another error, determine whether it is:
+   - another genuine syntax/type error in Review.tsx, or
+   - an unrelated existing issue.
+
+If the remaining error is still inside Review.tsx and is clearly caused by the same malformed JSX/TSX structure, fix only that related syntax problem.
+
+If the error is outside Review.tsx, STOP and report it. Do not start fixing unrelated files.
+
+11. After the build succeeds, STOP.
+
+Report:
+
+A. Exact part of Review.tsx that was malformed
+B. Minimal correction made
+C. Whether Review functionality was preserved
+D. Exact build command
+E. Exact build result
+F. Files changed in this task
+
+Do not make any other changes.
