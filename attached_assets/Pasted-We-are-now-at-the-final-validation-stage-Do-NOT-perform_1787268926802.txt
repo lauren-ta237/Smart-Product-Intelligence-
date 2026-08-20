@@ -1,0 +1,67 @@
+We are now at the final validation stage. Do NOT perform another broad code investigation and do NOT refactor anything.
+
+The backend, frontend, database connection, static image serving, and Products API are now working.
+
+The ONLY remaining task is to prove the original bug is fixed with a REAL product image.
+
+Follow the EXISTING application flow exactly. Do not invent a new image system and do not bypass the existing product architecture.
+
+FINAL END-TO-END TEST:
+
+1. Use the existing vendor/upload flow.
+
+2. Upload one real test product image into the existing application.
+
+3. Allow the existing AI analysis flow to process it.
+
+4. Verify that the analyzed/detected product has the correct image_url.
+
+5. Confirm/save the detected product using the existing "Confirm & Save to DB" flow.
+
+6. Verify in PostgreSQL that the newly created Product has:
+   - a non-null image_url
+   - the expected uploads/<filename> format
+   - forward slashes only
+   - the correct image associated with that product
+
+7. Call:
+   GET /api/v1/products
+
+8. Verify that the newly created product is returned and that its image_url is NOT null.
+
+9. Construct the exact browser image URL from that image_url.
+
+10. Request that URL from FastAPI and verify HTTP 200 and the correct image content type.
+
+11. Open/validate the buyer dashboard using the existing frontend.
+
+12. Confirm that the buyer sees the actual uploaded product image rather than the Unsplash/static fallback.
+
+13. Verify that the product name/label shown beside the image belongs to the same product record.
+
+IMPORTANT:
+- Do NOT change unrelated code.
+- Do NOT refactor the application.
+- Do NOT replace the real image with a placeholder.
+- Do NOT declare success merely because /uploads returns 200.
+- Do NOT use a temporary validation image as proof of the original bug being fixed.
+- Do NOT change the database schema unless the existing test genuinely requires it.
+- Preserve all existing vendor, buyer, admin, authentication, order, payment, and product functionality.
+
+If the normal UI cannot perform the authenticated upload because Replit does not have the required credentials or AI service access, do NOT start changing authentication or unrelated systems.
+
+Instead, report the exact blocker and tell me precisely what manual action I need to perform in the Replit preview/browser to complete the real end-to-end test.
+
+FINAL RESPONSE MUST BE SHORT AND CLEAR:
+
+A. Real image uploaded: YES/NO
+B. AI analysis completed: YES/NO
+C. Product saved with image_url: YES/NO
+D. GET /api/v1/products returns image_url: YES/NO
+E. Actual image URL returns HTTP 200: YES/NO
+F. Buyer dashboard displays actual uploaded image: YES/NO
+G. Product label matches image: YES/NO
+H. Original bug completely confirmed fixed: YES/NO
+I. If NO, give me exactly ONE remaining blocker and the exact manual action required.
+
+Do not spend quota explaining the investigation. Perform the final test.
