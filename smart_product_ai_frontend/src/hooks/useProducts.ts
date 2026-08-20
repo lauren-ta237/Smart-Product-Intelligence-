@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProducts, getProductById, createProduct, updateProduct, deleteProduct, type ProductInput } from "../api/products";
+import { getProducts, getProductById, createProduct, updateProduct, deleteProduct } from "../api/products";
+import type { ProductInput } from "../types/products";
 
 export function useProducts(filters?: {
   category?: string;
