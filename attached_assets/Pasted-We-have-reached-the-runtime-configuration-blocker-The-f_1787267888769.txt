@@ -1,0 +1,93 @@
+We have reached the runtime configuration blocker.
+
+The frontend build is already passing.
+
+The backend now fails during startup because the Replit environment is missing the required environment variable:
+
+JWT_SECRET
+
+DO NOT modify application code to bypass or weaken this requirement.
+
+DO NOT make JWT_SECRET optional.
+DO NOT change app/core/config/settings.py.
+DO NOT change authentication logic.
+DO NOT change JWT implementation.
+DO NOT change database configuration.
+
+TASK:
+
+1. Inspect the project's existing environment/configuration files and determine the expected environment variable names.
+
+2. Confirm that the backend requires:
+   JWT_SECRET
+
+3. Check whether a local environment/example file such as:
+   .env
+   .env.example
+   .env.template
+   exists.
+
+4. DO NOT display or print the value of any secret.
+
+5. Configure the Replit development environment with a safe development value for JWT_SECRET if Replit's environment-variable/secrets mechanism is available.
+
+IMPORTANT:
+- Never commit secrets to Git.
+- Never write JWT_SECRET into source code.
+- Never put the secret into a tracked .env file.
+- Do not expose the secret in your response.
+
+6. Also verify the other required backend environment variables from the existing configuration, but DO NOT reveal their values.
+
+7. Once the required environment configuration is available, start the backend again with the existing command:
+
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+8. If the backend starts successfully, DO NOT stop there.
+
+Continue with runtime validation:
+
+A. Verify the backend is reachable.
+
+B. Inspect the project-root uploads directory.
+
+C. If there are no image files, DO NOT invent one and DO NOT modify application code. Report that the uploads directory is empty.
+
+D. Verify that FastAPI's /uploads static mount points to the same physical directory used by LocalStorage.
+
+E. If an actual image exists, test:
+   /uploads/<actual-file-name>
+
+F. Test:
+   /api/v1/products
+
+G. Start the frontend with its existing command:
+   npm run dev
+
+H. Verify that the frontend can reach the backend using the existing environment configuration.
+
+IMPORTANT:
+Do not make application-code changes during this task unless startup reveals a genuine code error unrelated to missing environment configuration.
+
+If the backend starts but another configuration error occurs:
+STOP and report the exact missing configuration variable WITHOUT revealing its value.
+
+If the backend starts and reaches the HTTP testing stage:
+continue until the first genuine application/runtime failure.
+
+FINAL REPORT:
+
+1. Environment configuration status
+2. Backend startup status
+3. Backend URL
+4. Upload directory status
+5. Static /uploads test
+6. Products API test
+7. Frontend startup status
+8. Frontend/backend connectivity
+9. First genuine application failure, if any
+10. Files changed
+
+Do not expose secrets.
+Do not commit secrets.
+Do not modify authentication just to make the application start.
