@@ -1,0 +1,71 @@
+We have reached the next real backend startup blocker. Do NOT make broad changes or refactor the application.
+
+CURRENT ERROR:
+
+sqlalchemy.exc.InvalidRequestError:
+The asyncio extension requires an async driver to be used.
+The loaded 'psycopg2' is not async.
+
+GOAL:
+
+Fix ONLY the PostgreSQL driver/configuration mismatch so the existing FastAPI application can start correctly with SQLAlchemy's async engine.
+
+IMPORTANT RULES:
+
+1. First inspect:
+   - app/core/database.py
+   - app/core/config/settings.py
+   - requirements.txt / pyproject.toml / any existing dependency files
+   - the actual DATABASE_URL format currently available in the environment, BUT NEVER print or expose the password, secret, or full DATABASE_URL.
+
+2. Determine exactly why the configured DATABASE_URL is resolving to psycopg2.
+
+3. Do NOT replace the database architecture.
+4. Do NOT convert the application from async SQLAlchemy to synchronous SQLAlchemy.
+5. Do NOT rewrite database models.
+6. Do NOT modify authentication.
+7. Do NOT modify products, image handling, uploads, frontend, buyer dashboard, vendor dashboard, or AI analysis.
+8. Do NOT create a new database.
+9. Do NOT change the database schema or run migrations unless absolutely required for this driver issue.
+10. Preserve the existing PostgreSQL database and all existing data.
+
+Use the project's existing async SQLAlchemy architecture.
+
+If asyncpg is already declared but the URL is using the wrong driver, make the smallest configuration correction necessary.
+
+If asyncpg is missing, add/install the appropriate async PostgreSQL driver using the project's existing dependency-management convention. Do not unnecessarily change package versions.
+
+After the minimal fix:
+
+A. Start the backend using the existing application:
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+B. Confirm that the backend actually starts.
+
+C. Test a simple existing health/root endpoint if one exists.
+
+D. Confirm SQLAlchemy can initialize the database connection.
+
+E. Do NOT continue modifying unrelated code if another failure appears.
+
+If another error appears after this fix, STOP and report the exact first new error instead of guessing or making unrelated changes.
+
+Before changing anything, tell me:
+- which file/configuration is causing psycopg2 to be selected,
+- what the minimal fix will be,
+- which files will be changed.
+
+Then make the fix and run the backend validation.
+
+At the end report:
+
+1. Root cause
+2. Files changed
+3. Exact minimal correction
+4. Whether asyncpg is being used
+5. Whether the backend starts successfully
+6. Backend URL/port
+7. Health-check result
+8. Any new blocker
+
+Do NOT touch the image-display issue yet. We are fixing the backend startup blocker first so that we can perform the real end-to-end image test afterward.
