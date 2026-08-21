@@ -1,0 +1,109 @@
+CRITICAL FINAL DEBUG TASK — DO NOT MAKE BROAD CHANGES.
+
+I have almost no Replit AI quota left, so you MUST focus ONLY on the current blocker:
+
+SYMPTOM:
+- Login works.
+- Vendor can select/upload an image.
+- The UI enters the image processing state.
+- It stays on "processing" indefinitely.
+- AI analysis results never appear.
+- Do NOT redesign anything.
+- Do NOT modify unrelated files.
+- Do NOT refactor the application.
+- Do NOT change authentication, checkout, orders, admin, vendor dashboard, or buyer dashboard unless the upload-processing flow directly requires it.
+
+The exact flow that must work is:
+
+Vendor login
+→ select image
+→ upload image
+→ backend receives image
+→ image is stored
+→ AI analysis starts
+→ AI analysis completes
+→ analysis result is returned to frontend
+→ frontend stops loading/processing state
+→ Review/AI results are displayed
+→ vendor can Confirm & Save to DB
+→ saved product contains image_url
+→ buyer marketplace can display the image.
+
+IMPORTANT:
+Do NOT assume the problem is the browser warnings I pasted earlier. Ignore Stripe partitioned-cookie warnings, Feature Policy warnings, and Replit devtools warnings unless you can prove one directly causes the processing hang.
+
+FIRST, TRACE THE ACTUAL REQUEST THAT HAPPENS WHEN I CLICK THE IMAGE PROCESS/ANALYZE BUTTON.
+
+Inspect the existing frontend code to determine:
+1. Which function is called when processing starts.
+2. Which API endpoint it calls.
+3. Whether it uses fetch/axios/WebSocket/etc.
+4. The exact backend route receiving the request.
+5. Whether that backend route starts AI processing synchronously, asynchronously, as a background task, or through WebSocket.
+6. Where the frontend is waiting for the result.
+7. What exact condition changes the UI from "processing" to displaying the AI results.
+
+Then inspect the backend logs/code for that SAME request.
+
+I need you to identify the FIRST REAL FAILURE OR HANG in this chain.
+
+DO NOT just run npm build and tell me it succeeds. A successful build does NOT prove that image processing works.
+
+DO NOT create fake test results.
+DO NOT bypass the AI.
+DO NOT hardcode fake product results.
+DO NOT remove the loading state just to make the UI appear finished.
+DO NOT disable authentication.
+DO NOT replace the real AI processing with mock data.
+
+If the request is reaching the backend but hanging:
+- identify exactly where it hangs;
+- inspect the AI processor call, Gemini/API call, database operation, background task, or WebSocket involved;
+- fix ONLY the actual cause.
+
+If the frontend is waiting for the wrong endpoint, response shape, status value, or WebSocket event:
+- fix only that mismatch.
+
+If an exception is swallowed and the frontend remains permanently in "processing":
+- preserve the real error handling;
+- make the frontend leave the loading state and show the actual error;
+- but only if that is the actual cause.
+
+If the AI API configuration is missing or invalid:
+- do NOT print the secret;
+- identify which required secret/configuration is missing or failing;
+- tell me exactly which Replit Secret needs to be configured.
+
+If the AI processing succeeds but the frontend never receives the result:
+- trace the response/WebSocket/polling mechanism and fix that exact connection.
+
+VERY IMPORTANT:
+Before editing anything, inspect the existing implementation and state:
+A. exact frontend request/endpoint
+B. exact backend endpoint
+C. exact failure/hang point
+D. smallest fix
+E. files that will be changed
+
+Then make ONLY that minimal fix.
+
+After the fix:
+1. Build the frontend.
+2. Start/restart the backend.
+3. Verify the relevant upload/analysis endpoint.
+4. Verify that the frontend receives a completed analysis response.
+5. Do not stop merely because the server starts.
+6. Report whether the COMPLETE upload → AI result flow was actually tested.
+
+FINAL RESPONSE MUST CONTAIN:
+- Root cause
+- Exact files changed
+- Exact fix
+- Whether AI processing actually completed
+- Whether results actually reached the frontend
+- Whether the UI exited the processing state
+- Any remaining blocker requiring me to manually upload an image
+
+If you cannot perform the real authenticated upload because of Replit browser limitations, DO NOT claim the system is fixed. Instead, trace the request using the actual frontend/backend code and tell me the exact remaining manual test.
+
+THIS IS A SURGICAL DEBUGGING TASK. ONE PROBLEM ONLY: IMAGE UPLOAD → AI PROCESSING → AI RESULTS NOT APPEARING.
