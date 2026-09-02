@@ -132,12 +132,15 @@ async def update_order_status(order_id: uuid.UUID, payload: ShipmentUpdatePayloa
     order = res.scalar_one_or_none()
     if not order: raise HTTPException(status_code=404)
     
-    order.status = payload.status
+    raw_status = payload.status.value if hasattr(payload.status, "value") else str(payload.status)
+    order.status = raw_status.lower()
+
     ship_res = await db.execute(select(Shipment).where(Shipment.order_id == order.id))
     shipment = ship_res.scalar_one_or_none()
     if shipment:
-        if payload.tracking_number: shipment.tracking_number = payload.tracking_number
-        if payload.carrier: shipment.carrier = payload.carrier
+        if payload.tracking_number is not None: shipment.tracking_number = payload.tracking_number
+        if payload.carrier is not None: shipment.carrier = payload.carrier
+        if payload.estimated_delivery is not None: shipment.estimated_delivery = payload.estimated_delivery
     
     await db.commit()
     return {"status": "success"}

@@ -46,7 +46,7 @@ class Product(BaseModel):
         ForeignKey(f"{ProductImage.__tablename__}.id", ondelete="SET NULL"),
         nullable=True
     )
-    bounding_box: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    bounding_box: Mapped[Any | None] = mapped_column(JSON, nullable=True)
 
     approved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
@@ -72,7 +72,9 @@ class DetectedProduct(BaseModel):
 
     confidence_score: Mapped[float | None] = mapped_column(Float, default=0.0)
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    bounding_box: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    cropped_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    bounding_box: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+
     attributes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     approved: Mapped[bool] = mapped_column(Boolean, default=False)

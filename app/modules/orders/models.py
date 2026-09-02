@@ -7,16 +7,16 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from app.core.base_model import BaseModel
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    ACCEPTED = "ACCEPTED"
-    PREPARING = "PREPARING"
-    PACKED = "PACKED"
-    PROCESSING = "PROCESSING"
-    SHIPPED = "SHIPPED"
-    OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY"
-    DELIVERED = "DELIVERED"
-    COMPLETED = "COMPLETED"
-    CANCELLED = "CANCELLED"
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    PREPARING = "preparing"
+    PACKED = "packed"
+    PROCESSING = "processing"
+    SHIPPED = "shipped"
+    OUT_FOR_DELIVERY = "out_for_delivery"
+    DELIVERED = "delivered"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 class PaymentStatus(str, enum.Enum):
     PENDING = "PENDING"

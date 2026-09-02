@@ -32,9 +32,12 @@ export default function UploadDropzone() {
     try {
       // 1. Upload and get permanent URL
       const image = await uploadImage(file);
-      // Fallback to preview if upload response is malformed, but prioritize absolute path
-      const permanentUrl = image?.url || preview || "";
 
+      const permanentUrl = image?.storage_url;
+
+      if (!permanentUrl) {
+        throw new Error("Backend did not return a permanent image URL.");
+      }
       // 2. Trigger AI Analysis
       setStatusText("triggering");
       const triggerRes = await startAnalysis(image.id);

@@ -10,9 +10,11 @@ from app.modules.orders.router import router as orders_router  # 🟢 IMPORT ORD
 from app.modules.admin.router import router as admin_router
 from app.api.v1.developer import router as developer_router
 from app.modules.catalog.router import router as catalog_router
+from app.modules.catalog.wishlist_router import router as wishlist_router
 
 api_router = APIRouter()
 
+api_router.include_router(wishlist_router, prefix="/api/v1")
 # TASK 4: Ensure specific routes are registered before generic ones to prevent path conflicts.
 api_router.include_router(orders_router)
 

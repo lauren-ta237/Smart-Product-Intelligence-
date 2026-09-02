@@ -1,9 +1,8 @@
-
-// smart_product_ai_frontend/src/app/buyer/orders/page.tsx
-
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../../../api/client";
+import { getBuyerOrders } from "../../../api/orders";
+import { useAuth } from "../../../store/auth";
+import VendorOrders from "../../../components/vendor/VendorOrders";
 
 interface OrderItem {
   product_name: string;
@@ -24,48 +23,87 @@ interface BuyerOrder {
 
 export default function BuyerOrders() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const isVendor = user?.role?.toLowerCase() === "vendor";
+
   const [orders, setOrders] = useState<BuyerOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchBuyerOrders = async () => {
     try {
-      const res = await api.get("/orders/buyer");
-      setOrders(res.data);
+      const data = await getBuyerOrders();
+      setOrders(data);
     } catch (err) {
-      console.error("Order history fetch failed.");
+      console.error("Buyer order history fetch failed.", err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchBuyerOrders();
-  }, []);
+    if (!isVendor) {
+      fetchBuyerOrders();
+    } else {
+      setLoading(false);
+    }
+  }, [isVendor]);
 
   const getStepColor = (currentStatus: string, step: string) => {
     const sequence = [
-      "PENDING",
-      "ACCEPTED",
-      "PREPARING",
-      "PACKED",
-      "SHIPPED",
-      "OUT_FOR_DELIVERY",
-      "DELIVERED",
+      "pending",
+      "accepted",
+      "preparing",
+      "packed",
+      "shipped",
+      "out_for_delivery",
+      "delivered",
     ];
 
-    const currentIndex = sequence.indexOf(currentStatus);
-    const stepIndex = sequence.indexOf(step);
+    const normalizedCurrent = (currentStatus || "").toLowerCase();
+    const normalizedStep = step.toLowerCase();
 
-    if (currentStatus === "CANCELLED") {
+    const currentIndex = sequence.indexOf(normalizedCurrent);
+    const stepIndex = sequence.indexOf(normalizedStep);
+
+    if (normalizedCurrent === "cancelled") {
       return "bg-red-500/20 text-red-400";
     }
 
-    if (stepIndex <= currentIndex) {
+    if (currentIndex !== -1 && stepIndex <= currentIndex) {
       return "bg-emerald-500 text-slate-950 font-black";
     }
 
     return "bg-white/5 text-slate-600";
   };
+
+  if (isVendor) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10 antialiased">
+        <div className="max-w-7xl mx-auto space-y-8">
+          <header className="flex justify-between items-center border-b border-white/10 pb-6">
+            <div>
+              <h1 className="text-3xl font-bold">Track Orders</h1>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                Order Fulfillment & Shipment Management
+              </p>
+            </div>
+
+            <button
+              onClick={() => navigate("/")}
+              className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10"
+            >
+              Back to Dashboard
+            </button>
+          </header>
+
+          <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+            <VendorOrders />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -131,29 +169,34 @@ export default function BuyerOrders() {
                         "SHIPPED",
                         "OUT_FOR_DELIVERY",
                         "DELIVERED",
-                      ].map((step) => (
-                        <div
-                          key={step}
-                          className="flex items-center gap-4"
-                        >
-                          <div
-                            className={`w-3 h-3 rounded-full ${getStepColor(
-                              order.status,
-                              step
-                            )} shadow-xl`}
-                          />
+                      ].map((step) => {
+                        const isCurrentActive =
+                          (order.status || "").toLowerCase() === step.toLowerCase();
 
-                          <span
-                            className={`text-[10px] font-black tracking-widest ${
-                              order.status === step
-                                ? "text-emerald-400"
-                                : "text-slate-500"
-                            }`}
+                        return (
+                          <div
+                            key={step}
+                            className="flex items-center gap-4"
                           >
-                            {step}
-                          </span>
-                        </div>
-                      ))}
+                            <div
+                              className={`w-3 h-3 rounded-full ${getStepColor(
+                                order.status,
+                                step
+                              )} shadow-xl`}
+                            />
+
+                            <span
+                              className={`text-[10px] font-black tracking-widest ${
+                                isCurrentActive
+                                  ? "text-emerald-400"
+                                  : "text-slate-500"
+                              }`}
+                            >
+                              {step}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 

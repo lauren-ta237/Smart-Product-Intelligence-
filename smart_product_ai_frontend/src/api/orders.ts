@@ -12,18 +12,23 @@ export interface CreateOrderPayload {
   total_price?: number;
 }
 
+// 🟢 FIXED: Updated to lowercase values matching the backend OrderStatus model
 export interface UpdateOrderStatusPayload {
-  status: "PENDING" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED";
+  status: 
+    | "pending" 
+    | "accepted" 
+    | "preparing" 
+    | "packed" 
+    | "processing" 
+    | "shipped" 
+    | "out_for_delivery" 
+    | "delivered" 
+    | "completed" 
+    | "cancelled";
   tracking_number?: string | null;
   carrier?: string | null;
   estimated_delivery?: string | null;
 }
-
-/**
- * 🟢 FIXED: Removed redundant "/v1" prefix. 
- * Since the 'api' client already has /api/v1 in its baseURL, 
- * we only need to provide the relative endpoint path.
- */
 
 // Post a new order (Buyer Checkout)
 export const createOrder = async (payload: CreateOrderPayload) => {

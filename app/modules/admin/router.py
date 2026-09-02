@@ -361,6 +361,24 @@ async def reset_admin_password(
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to reset password: {str(e)}")
 
+@router.get("/orders", dependencies=[Depends(verify_admin_role)])
+async def list_all_system_orders(db: AsyncSession = Depends(get_db)):
+    """Retrieve all platform orders for administrative tracking and logs."""
+    stmt = select(Order, User.email).outerjoin(User, Order.buyer_id == User.id).order_by(Order.created_at.desc())
+    res = await db.execute(stmt)
+    results = res.all()
+    
+    output = []
+    for order_obj, buyer_email in results:
+        output.append({
+            "id": str(order_obj.id),
+            "buyer_id": str(order_obj.buyer_id) if order_obj.buyer_id else None,
+            "buyer_email": buyer_email,
+            "total_price": order_obj.total_price,
+            "status": order_obj.status,
+            "created_at": order_obj.created_at
+        })
+    return output
 
 @router.get("/api-keys", response_model=List[APIKeyResponse], dependencies=[Depends(verify_admin_role)])
 async def list_api_keys(db: AsyncSession = Depends(get_db)):

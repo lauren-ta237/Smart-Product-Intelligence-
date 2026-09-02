@@ -114,7 +114,7 @@ async def developer_trigger_vision(
         image_url=real_image.storage_url,
         batch_id=None,
         provider="google",
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3.6-flash",
         status=AnalysisStatus.PROCESSING
     )
     db.add(analysis_record)

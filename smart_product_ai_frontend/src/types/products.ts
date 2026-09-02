@@ -72,8 +72,9 @@ export interface DetectedProduct {
     brand: string | null;
     sku: string | null;         // Aligned with database column 'sku'
     confidence_score: number;
-    bounding_box: ProductCoordinates; 
+    bounding_box: ProductBoundingBox | string | null; 
     image_url?: string | null;
+    cropped_image_url?: string | null;
     
     // REGIONAL OVERRIDES: Expected string | null from FastAPI
     sku_us: string | null;     // Aligned with database column 'sku_us'

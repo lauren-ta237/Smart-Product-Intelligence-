@@ -77,7 +77,7 @@ class GeminiVisionProvider:
             raise ValueError("[ERROR] Gemini API Key could not be resolved from local configuration.")
 
         self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = "gemini-3.6-flash"
 
     async def analyze_image(self, image_url: str, context: dict) -> dict:
         country = context.get("country", "US")

@@ -127,6 +127,18 @@ async def get_detected_products(
     )
     detected_products = prod_result.scalars().all()
     
+    # 🟢 PRINT RAW AI JSON PAYLOAD DATA TO TERMINAL
+    print("\n" + "="*20 + " RAW AI PRODUCT JSON PAYLOAD " + "="*20)
+    for p in detected_products:
+        print(json.dumps({
+            "id": str(p.id),
+            "name": p.name,
+            "category": p.category,
+            "bounding_box": p.bounding_box,
+            "image_url": p.image_url
+        }, indent=2))
+    print("="*69 + "\n")
+
     formatted_products = []
     for p in detected_products:
         box_coords = p.bounding_box

@@ -258,7 +258,7 @@ async def start_batch_analysis(
                 image_url=real_image.storage_url,  
                 batch_id=generated_batch_id,
                 provider="google",
-                model_name="gemini-2.5-flash",
+                model_name="gemini-3.6-flash",
                 status=AnalysisStatus.PROCESSING
             )
             db.add(analysis_record)
@@ -319,7 +319,7 @@ async def start_single_analysis(
             image_url=real_image.storage_url,  
             batch_id=None,  
             provider="google",
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.6-flash",
             status=AnalysisStatus.PROCESSING
         )
         db.add(analysis_record)
@@ -397,7 +397,7 @@ async def start_analysis_test(
                 image_url=img.storage_url,  
                 batch_id=generated_batch_id,
                 provider="google",
-                model_name="gemini-2.5-flash",
+                model_name="gemini-3.6-flash",
                 status=AnalysisStatus.PROCESSING
             )
             db.add(analysis_record)

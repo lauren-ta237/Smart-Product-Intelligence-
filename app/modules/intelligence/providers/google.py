@@ -18,7 +18,7 @@ class GoogleVisionProvider:  # Updated class name for clarity
             raise ValueError("[ERROR] Google API Key could not be resolved from local configuration.")
 
         self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = "gemini-3.6-flash"
 
     async def analyze_image(self, image_url: str, context: dict) -> dict:
         prompt = context.get("prompt", "Identify products on shelves and return structured count data.")
