@@ -741,12 +741,10 @@ export default function ProductDetectionViewer({
                     <div className="text-right">
 
                       <span className="font-mono text-emerald-400 font-black text-sm block">
-                        $
+                        
                         {product.price
-                          ? product.price.toFixed(
-                              2
-                            )
-                          : "5.00"}
+                          ? Math.round(product.price ?? 0).toLocaleString()
+                          : "5.00"}{" "}FCFA
                       </span>
 
                     </div>

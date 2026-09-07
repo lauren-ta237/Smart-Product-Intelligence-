@@ -73,14 +73,41 @@ class ProductCRUDService:
                     temp_path = raw_url.split("localhost:8000/")[-1] if "localhost:8000" in raw_url else raw_url
                     clean_path = temp_path.replace("\\", "/")
                     
-                    # Ensure strictly valid numbers
+                    # Ensure strictly valid numbers & sanitize AI pricing anomalies in CFA
                     try:
-                        price = float(item.get("price", 0.0))
-                        stock = int(item.get("stock_quantity", 10))
+                        raw_price = float(item.get("price", 0.0))
                     except (ValueError, TypeError):
-                        price, stock = 5.0, 10
+                        raw_price = 15000.0  # Realistic default fallback in CFA (e.g. 15,000 CFA)
 
                     item_name = item.get("name", "Scanned Product")
+                    lower_name = item_name.lower()
+
+                    # Guardrail: Enforce realistic local market pricing in CFA for footwear and general goods
+                    footwear_keywords = ["shoe", "sneaker", "boot", "sandal", "gazelle", "boston", "kayano", "salomon", "spezial", "1906"]
+                    
+                    if any(kw in lower_name for kw in footwear_keywords):
+                        # If AI hallucinates per-kg pricing or extreme dollar conversions (> 250,000 CFA per pair)
+                        if raw_price > 250000 or raw_price < 5000:
+                            price = 35000.0  # Standard local market price for quality sneakers/shoes in CFA
+                        else:
+                            price = raw_price
+                    else:
+                        # General items local pricing check
+                        if raw_price > 500000:
+                            price = 10000.0
+                        else:
+                            price = raw_price
+
+                    try:
+                        stock = int(item.get("stock_quantity", 10))
+                    except (ValueError, TypeError):
+                        stock = 10
+
+                    # Handle category & description sanity
+                    category = item.get("category", "General")
+                    if any(kw in lower_name for kw in footwear_keywords):
+                        category = "Footwear"
+
                     stmt = select(Product).where(and_(Product.name == item_name, Product.vendor_id == vendor_id))
                     result = await self.db.execute(stmt)
                     existing = result.scalars().first()
@@ -89,6 +116,7 @@ class ProductCRUDService:
                         existing.image_url = clean_path
                         existing.bounding_box = item.get("bounding_box")
                         existing.price = price
+                        existing.category = category
                         existing.approved = True # STEP 2.2: Force visibility for buyers
                         saved_products.append(existing)
                     else:
@@ -101,7 +129,7 @@ class ProductCRUDService:
                             approved=True, # STEP 2.2: Ensure new products show up for buyers
                             price=price,
                             stock_quantity=stock,
-                            category=item.get("category", "General"),
+                            category=category,
                             description=item.get("description", "")
                         )
                         self.db.add(new_product)

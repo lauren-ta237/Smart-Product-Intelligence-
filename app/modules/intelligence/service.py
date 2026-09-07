@@ -131,6 +131,12 @@ class IntelligenceService:
                 f"or extension missing: {exc}"
             )
 
+            # Roll back the nested transaction state cleanly if supported, or let exception propagate safety
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+
             return None
 
     # ---------------------------------------------------------
@@ -195,82 +201,49 @@ class IntelligenceService:
     ) -> Optional[AIAnalysis]:
 
         start = time.time()
-
         context = context or {}
 
-        # -----------------------------------------------------
-        # Validate analysis UUID
-        # -----------------------------------------------------
         try:
-
-            parsed_analysis_id = UUID(
-                str(analysis_id)
-            )
-
-        except (
-            ValueError,
-            AttributeError,
-            TypeError,
-        ):
-
-            logger.error(
-                f"[ERROR] Invalid analysis_id supplied: "
-                f"{analysis_id}"
-            )
-
+            parsed_analysis_id = UUID(str(analysis_id))
+        except (ValueError, AttributeError, TypeError):
+            logger.error(f"[ERROR] Invalid analysis_id supplied: {analysis_id}")
             return None
 
-        # -----------------------------------------------------
-        # Load analysis record
-        # -----------------------------------------------------
         result_set = await self.db.execute(
-            select(AIAnalysis).where(
-                AIAnalysis.id == parsed_analysis_id
-            )
+            select(AIAnalysis).where(AIAnalysis.id == parsed_analysis_id)
         )
-
         analysis = result_set.scalar_one_or_none()
 
         if not analysis:
-
-            logger.error(
-                f"[ERROR] Analysis ID "
-                f"{parsed_analysis_id} not found."
-            )
-
+            logger.error(f"[ERROR] Analysis ID {parsed_analysis_id} not found.")
             return None
 
         try:
-
             # =================================================
-            # 1. Build localization context
+            # 1. Resolve real vendor information from database
             # =================================================
+            db_vendor = vendor
+            if isinstance(vendor, (str, UUID)):
+                from app.modules.vendors.models import Vendor
+                vendor_query = await self.db.execute(
+                    select(Vendor).where(Vendor.id == vendor)
+                )
+                db_vendor = vendor_query.scalar_one_or_none()
 
             vendor_country = (
-                context.get("country")
-                or getattr(
-                    vendor,
-                    "country",
-                    "Global",
-                )
+                getattr(db_vendor, "country", None)
+                or context.get("country")
+                or "Global"
             )
-
             vendor_city = (
-                context.get("city")
-                or getattr(
-                    vendor,
-                    "city",
-                    "Any City",
-                )
+                getattr(db_vendor, "city", None)
+                or context.get("city")
+                or "Any City"
             )
-
             vendor_lang = (
-                context.get("language")
-                or getattr(
-                    vendor,
-                    "preferred_language",
-                    "en",
-                )
+                getattr(db_vendor, "preferred_language", None)
+                or context.get("language")
+                or "en"
             )
 
             context["prompt"] = (
@@ -288,7 +261,6 @@ class IntelligenceService:
             # =================================================
             # 2. Ask AI to analyze image
             # =================================================
-
             result = await self.processor.process_image(
                 image,
                 context=context,
@@ -304,375 +276,155 @@ class IntelligenceService:
                 else []
             )
 
-            logger.info(
-                f"[INTELLIGENCE] AI detected "
-                f"{len(raw_products)} products."
-            )
+            logger.info(f"[INTELLIGENCE] AI detected {len(raw_products)} products.")
 
             # =================================================
             # 3. Resolve source image path
             # =================================================
-
             source_image_url = (
-                getattr(
-                    image,
-                    "storage_url",
-                    None,
-                )
+                getattr(image, "storage_url", None)
                 or analysis.image_url
             )
 
             if not source_image_url:
-
-                raise FileNotFoundError(
-                    "The analysis does not contain "
-                    "a source image URL."
-                )
-
-            # LocalStorage returns:
-            #
-            # uploads/<uuid>.jpg
-            #
-            # Convert it into an actual filesystem path.
+                raise FileNotFoundError("The analysis does not contain a source image URL.")
 
             clean_source_path = source_image_url
-
+            server_host_url = getattr(settings, "SERVER_HOST", "localhost:8000")
+            
+            if f"{server_host_url}/" in clean_source_path:
+                clean_source_path = clean_source_path.split(f"{server_host_url}/", 1)[1]
             if "localhost:8000/" in clean_source_path:
-
-                clean_source_path = (
-                    clean_source_path.split(
-                        "localhost:8000/",
-                        1,
-                    )[1]
-                )
-
+                clean_source_path = clean_source_path.split("localhost:8000/", 1)[1]
             if "127.0.0.1:8000/" in clean_source_path:
+                clean_source_path = clean_source_path.split("127.0.0.1:8000/", 1)[1]
 
-                clean_source_path = (
-                    clean_source_path.split(
-                        "127.0.0.1:8000/",
-                        1,
-                    )[1]
-                )
-
-            source_path = Path(
-                clean_source_path
-            )
-
-            # If relative, resolve from project root.
+            source_path = Path(clean_source_path)
             if not source_path.is_absolute():
-
-                source_path = (
-                    Path.cwd()
-                    / source_path
-                )
+                source_path = Path.cwd() / source_path
 
             source_path = source_path.resolve()
 
-            logger.info(
-                f"[IMAGE CROP] Source image: "
-                f"{source_path}"
-            )
-
             if not source_path.exists():
-
-                raise FileNotFoundError(
-                    "Original image could not be "
-                    f"found at: {source_path}"
-                )
+                raise FileNotFoundError(f"Original image could not be found at: {source_path}")
 
             # =================================================
             # 4. Determine crop output directory
             # =================================================
-
-            # Crops live in:
-            #
-            # static/cropped/
-            #
-            # relative to the project root.
-
-            crop_output_dir = (
-                Path.cwd()
-                / "static"
-                / "cropped"
-            )
-
-            crop_output_dir.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
-            logger.info(
-                f"[IMAGE CROP] Output directory: "
-                f"{crop_output_dir}"
-            )
+            crop_output_dir = Path.cwd() / "static" / "cropped"
+            crop_output_dir.mkdir(parents=True, exist_ok=True)
 
             # =================================================
             # 5. Process every detected product
             # =================================================
-
             for raw_item in raw_products:
-
-                item = self._to_dict(
-                    raw_item
-                )
-
-                # ---------------------------------------------
-                # Product information
-                # ---------------------------------------------
-
+                item = self._to_dict(raw_item)
+                
                 product_name = (
                     item.get("name")
                     or item.get("product_name")
                     or "Unknown Product"
                 )
-
                 try:
-
                     confidence = float(
                         item.get("confidence_score")
                         or item.get("confidence")
                         or 1.0
                     )
-
-                except (
-                    ValueError,
-                    TypeError,
-                ):
-
+                except (ValueError, TypeError):
                     confidence = 1.0
 
-                # ---------------------------------------------
-                # Bounding box
-                # ---------------------------------------------
+                box_raw = self._to_dict(item.get("bounding_box"))
+                box = {}
+                if box_raw:
+                    try:
+                        box = {
+                            "x": float(box_raw.get("x", 0.0)),
+                            "y": float(box_raw.get("y", 0.0)),
+                            "width": float(box_raw.get("width", 0.0)),
+                            "height": float(box_raw.get("height", 0.0)),
+                        }
+                    except (ValueError, TypeError):
+                        box = {}
 
-                box = self._to_dict(
-                    item.get("bounding_box")
-                )
-
-                logger.info(
-                    f"[IMAGE CROP] Product: "
-                    f"{product_name}"
-                )
-
-                logger.info(
-                    f"[IMAGE CROP] Bounding box: "
-                    f"{box}"
-                )
-
-                # ---------------------------------------------
-                # SKU
-                # ---------------------------------------------
-
-                sku_val = (
-                    item.get("sku")
-                    or item.get("possible_sku")
-                )
-
-                # ---------------------------------------------
-                # Price
-                # ---------------------------------------------
+                sku_val = item.get("sku") or item.get("possible_sku")
 
                 try:
-
-                    raw_price = (
-                        item.get("estimated_price")
-                        or item.get("price")
-                    )
-
-                    extracted_price = (
-                        float(raw_price)
-                        if raw_price is not None
-                        else 0.0
-                    )
-
-                except (
-                    ValueError,
-                    TypeError,
-                ):
-
+                    raw_price = item.get("estimated_price") or item.get("price")
+                    extracted_price = float(raw_price) if raw_price is not None else 0.0
+                except (ValueError, TypeError):
                     extracted_price = 0.0
 
-                # ---------------------------------------------
-                # Fuzzy product matching
-                # ---------------------------------------------
-
-                best_product = (
-                    await self._match_product_pg_trgm(
-                        product_name,
-                        threshold=0.3,
-                    )
+                best_product = await self._match_product_pg_trgm(
+                    product_name,
+                    threshold=0.3,
                 )
 
-                # ---------------------------------------------
-                # Determine final price
-                # ---------------------------------------------
+                CURRENCY_MULTIPLIER = 600.0  
+                MINIMUM_VALID_PRICE = 100.0  
 
                 if (
                     best_product
                     and best_product.price is not None
                     and float(best_product.price) > 0
                 ):
-
-                    final_price = float(
-                        best_product.price
-                    )
-
+                    base_price = float(best_product.price)
                 else:
+                    base_price = extracted_price
 
-                    final_price = extracted_price
-
-                # =================================================
-                # 6. Generate UUID for detected product
-                # =================================================
+                if 0 < base_price < MINIMUM_VALID_PRICE:
+                    final_price = base_price * CURRENCY_MULTIPLIER
+                else:
+                    final_price = base_price
 
                 detected_product_id = uuid4()
-
-                # =================================================
-                # 7. Crop the individual product
-                # =================================================
-
                 cropped_image_url = None
-
                 if box:
-
-                    cropped_image_url = (
-                        crop_product_image(
-                            source_image_path=str(
-                                source_path
-                            ),
-                            bounding_box=box,
-                            output_dir=str(
-                                crop_output_dir
-                            ),
-                            product_id=str(
-                                detected_product_id
-                            ),
-                        )
+                    cropped_image_url = crop_product_image(
+                        source_image_path=str(source_path),
+                        bounding_box=box,
+                        output_dir=str(crop_output_dir),
+                        product_id=str(detected_product_id),
                     )
-
-                else:
-
-                    logger.warning(
-                        f"[IMAGE CROP] No bounding box "
-                        f"returned for product: "
-                        f"{product_name}"
-                    )
-
-                # =================================================
-                # 8. Create database detection record
-                # =================================================
 
                 detected = DetectedProduct(
-
                     id=detected_product_id,
-
                     analysis_id=analysis.id,
-
                     name=product_name,
-
-                    description=item.get(
-                        "description"
-                    ),
-
-                    category=item.get(
-                        "category"
-                    ),
-
-                    brand=item.get(
-                        "brand"
-                    ),
-
+                    description=item.get("description"),
+                    category=item.get("category"),
+                    brand=item.get("brand"),
                     sku=sku_val,
-
                     market_sku=sku_val,
-
                     confidence_score=confidence,
-
                     bounding_box=box,
-
                     price=final_price,
-
                     image_url=analysis.image_url,
-
-                    cropped_image_url=(
-                        cropped_image_url
-                    ),
-
-                    attributes=item.get(
-                        "attributes"
-                    ),
-
+                    cropped_image_url=cropped_image_url,
+                    attributes=item.get("attributes"),
                     approved=False,
-
                     stock_quantity=0,
-
                     location=None,
                 )
-
-                self.db.add(
-                    detected
-                )
-
-                logger.info(
-                    "[INTELLIGENCE] Saved detected "
-                    f"product '{product_name}' "
-                    f"with crop URL: "
-                    f"{cropped_image_url}"
-                )
+                self.db.add(detected)
 
             # =================================================
-            # 9. Mark analysis complete
+            # 6. Mark analysis complete & commit transaction
             # =================================================
-
-            analysis.detected_count = (
-                len(raw_products)
-            )
-
-            analysis.status = (
-                AnalysisStatus.COMPLETED
-            )
-
-            analysis.processing_time = (
-                time.time() - start
-            )
-
+            analysis.detected_count = len(raw_products)
+            analysis.status = AnalysisStatus.COMPLETED
+            analysis.processing_time = time.time() - start
             await self.db.commit()
-
-            logger.info(
-                "[INTELLIGENCE] Analysis "
-                f"{analysis.id} completed successfully."
-            )
-
+            
             return analysis
 
         except InvalidDatasetException:
-
-            # Preserve the existing guardrail behavior.
-
-            logger.warning(
-                "[INTELLIGENCE] Invalid dataset "
-                f"for analysis {parsed_analysis_id}"
-            )
-
-            return await self._mark_failed(
-                parsed_analysis_id,
-                start,
-            )
-
+            logger.warning(f"[INTELLIGENCE] Invalid dataset for analysis {parsed_analysis_id}")
+            return await self._mark_failed(parsed_analysis_id, start)
         except Exception as exc:
-
-            logger.error(
-                f"[ERROR] Intelligence Service Failed: "
-                f"{exc}"
-            )
-
+            logger.error(f"[ERROR] Intelligence Service Failed: {exc}")
             traceback.print_exc()
-
-            return await self._mark_failed(
-                parsed_analysis_id,
-                start,
-            )
+            return await self._mark_failed(parsed_analysis_id, start)
 
     # ---------------------------------------------------------
     # Failure handler
@@ -682,41 +434,32 @@ class IntelligenceService:
         analysis_id: UUID,
         start_time: float,
     ) -> Optional[AIAnalysis]:
-
         try:
-
-            await self.db.rollback()
-
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
             fresh_result = await self.db.execute(
                 select(AIAnalysis).where(
                     AIAnalysis.id == analysis_id
                 )
             )
-
             analysis = (
                 fresh_result.scalar_one_or_none()
             )
-
             if analysis:
-
                 analysis.status = (
                     AnalysisStatus.FAILED
                 )
-
                 analysis.processing_time = (
                     time.time()
                     - start_time
                 )
-
                 await self.db.commit()
-
                 return analysis
-
         except Exception as err:
-
             logger.error(
                 "[FATAL] Failed to update "
                 f"failure status: {err}"
             )
-
         return None

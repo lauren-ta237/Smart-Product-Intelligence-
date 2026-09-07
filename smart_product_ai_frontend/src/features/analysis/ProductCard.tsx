@@ -276,8 +276,8 @@ export default function ProductCard({
         description,
         sku: sku.trim() === "" ? null : sku.trim(),
         location: location.trim() === "" ? null : location.trim(),
-        price: Number(price),
-        stock_quantity: Number(stockQuantity),
+        price: Number(price) || 0,
+        stock_quantity: Number(stockQuantity) || 0,
       });
     }
   };
@@ -341,18 +341,20 @@ export default function ProductCard({
             <div className="grid grid-cols-2 gap-2">
               <input
                 type="number"
+                step="any"
                 value={price}
                 onChange={(event) =>
-                  setPrice(Number(event.target.value))
+                  (event.target.value === "" ? 0 : Number(event.target.value))
                 }
                 className="bg-slate-950 p-2 rounded-xl text-emerald-400"
               />
 
               <input
                 type="number"
+                step="1"
                 value={stockQuantity}
                 onChange={(event) =>
-                  setStockQuantity(Number(event.target.value))
+                  (event.target.value === "" ? 0 : Number(event.target.value))
                 }
                 className="bg-slate-950 p-2 rounded-xl text-white"
               />
@@ -382,7 +384,7 @@ export default function ProductCard({
 
             <div className="flex justify-between items-center mt-2">
               <span className="text-emerald-400 font-bold">
-                ${Number(price).toFixed(2)}
+                {Math.round(Number(price) || 0).toLocaleString()} FCFA
               </span>
 
               <span className="text-slate-400 text-[10px]">

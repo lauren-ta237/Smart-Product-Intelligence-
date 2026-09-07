@@ -9,20 +9,24 @@ import BuyerOrders from "../app/buyer/orders/page";
 import AdminDashboard from "../pages/AdminDashboard";
 import CheckoutPage from "../pages/CheckoutPage";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
+import { useAuth } from "../store/auth";
+
+// A small helper wrapper for the root route to handle guests vs vendors
+function RootRouteHandler() {
+  const user = useAuth((state) => state.user);
+  const rawRole = user?.role?.toLowerCase() || "";
+
+  // If a vendor is logged in, or if they hit root, ensure they have access or redirect if necessary.
+  // If they are a guest (no user), they can view the buyer marketplace freely.
+  return <Dashboard />;
+}
 
 export default function Router() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Main Marketplace Dashboard (Accessible by Vendors & Buyers) */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute allowedRoles={["vendor", "buyer", "customer"]}>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+        {/* Main Marketplace Dashboard - Open to guests/buyers, but protected/tailored inside if needed */}
+        <Route path="/" element={<RootRouteHandler />} />
 
         {/* Superadmin Dashboard */}
         <Route
@@ -36,16 +40,13 @@ export default function Router() {
 
         {/* Buyer Orders Dashboard */}
         <Route
-  path="/buyer/orders"
-  element={
-    <>
-      {/* 🟢 Allowed vendors and administrators to access order tracking */}
-      <ProtectedRoute allowedRoles={["buyer", "customer", "vendor", "admin"]}>
-        <BuyerOrders />
-      </ProtectedRoute>
-    </>
-  }
-/>
+          path="/buyer/orders"
+          element={
+            <ProtectedRoute allowedRoles={["buyer", "customer", "vendor", "admin"]}>
+              <BuyerOrders />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Checkout Flow Protected Route */}
         <Route

@@ -512,6 +512,12 @@ export default function Dashboard() {
 
   const handleAddToCart = useCallback(
     (product: ProduceItem) => {
+      // 🟢 Redirect to login if user is not authenticated
+      if (!user) {
+        navigate("/login");
+        return;
+      }
+
       addToCart({
         id: product.id,
         name: product.name,
@@ -521,7 +527,7 @@ export default function Dashboard() {
         vendor_id: product.vendor_id,
       });
     },
-    [addToCart]
+    [addToCart, user, navigate]
   );
 
   // ---------------------------------------------------------
@@ -529,13 +535,18 @@ export default function Dashboard() {
   // ---------------------------------------------------------
 
   const handleToggleWishlist = (product: ProduceItem) => {
+    // 🟢 Redirect to login if user is not authenticated
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
     if (isInWishlist(product.id)) {
       removeFromWishlist(product.id);
     } else {
       addToWishlist(product);
     }
   };
-
   const handleProceedToCheckout = () => {
     setCartOpen(false);
     navigate("/checkout");
@@ -641,10 +652,8 @@ export default function Dashboard() {
                 </span>
 
                 <h3 className="text-3xl font-black text-emerald-400 mt-2">
-                  $
-                  {stats?.revenue
-                    ? stats.revenue.toFixed(2)
-                    : "0.00"}
+                  
+                  {Math.round(stats?.revenue ?? 0).toLocaleString()}FCFA
                 </h3>
               </div>
 
@@ -862,7 +871,7 @@ export default function Dashboard() {
                             </span>
 
                             <span className="text-emerald-400 font-bold">
-                              ${(p.price ?? 0).toFixed(2)}
+                              {Math.round((p.price ?? 0) * 600).toLocaleString()} FCFA
                             </span>
                           </div>
                         </div>
@@ -1382,7 +1391,7 @@ export default function Dashboard() {
                         </p>
 
                         <p className="text-xs text-slate-400 mt-0.5">
-                          ${item.price.toFixed(2)} /{" "}
+                          {Math.round(item.price ?? 0).toLocaleString()} FCFA /{" "}
                           {item.category?.toLowerCase() ===
                           "electronics"
                             ? "unit"
@@ -1432,7 +1441,7 @@ export default function Dashboard() {
                 </span>
 
                 <span className="text-xl font-bold text-emerald-400">
-                  ${totalCartPrice.toFixed(2)}
+                {Math.round(totalCartPrice ?? 0).toLocaleString()} FCFA
                 </span>
               </div>
 
