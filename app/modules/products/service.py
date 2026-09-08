@@ -16,7 +16,10 @@ class ProductCRUDService:
         self.db = db
 
     async def create_product(self, data: ProductCreate, vendor_id: UUID) -> Product:
-        # If an image_id relation is provided, confirm possession and resolve absolute path URL
+        # Resolve the storage path from the image_id to ensure the image_url column is persisted
+        # even if the frontend doesn't provide a direct URL string.
+        final_image_url = data.image_url
+        
         if data.image_id:
             img_result = await self.db.execute(
                 select(ProductImage).where(
@@ -27,8 +30,17 @@ class ProductCRUDService:
                 )
             )
             image_record = img_result.scalar_one_or_none()
-            if image_record and not data.image_url:
-                data.image_url = image_record.storage_url
+            
+            # If the media record exists, sync its storage_url to the product table
+            if image_record:
+                # We prioritize the database media path to prevent 'undefined' or 'null' strings
+                if not final_image_url or str(final_image_url).lower() in ["undefined", "null"]:
+                    final_image_url = image_record.storage_url
+
+        # Magnitude Guard: Fix tiny manual prices (e.g. 2 -> 1200)
+        final_price = data.price if data.price is not None else 0.0
+        if 0 < final_price < 100:
+            final_price = final_price * 600.0
 
         product = Product(
             vendor_id=vendor_id,
@@ -40,13 +52,13 @@ class ProductCRUDService:
             sku_us=data.sku_us,
             sku_cm=data.sku_cm,
             market_sku=data.market_sku,
-            image_url=data.image_url,
+            image_url=final_image_url,
             image_id=data.image_id,
             bounding_box=data.bounding_box,
             approved=data.approved,
 
             # transactional extensions
-            price=data.price,
+            price=final_price,
             stock_quantity=data.stock_quantity,
             location=data.location
         )
@@ -77,33 +89,32 @@ class ProductCRUDService:
                     try:
                         raw_price = float(item.get("price", 0.0))
                     except (ValueError, TypeError):
-                        raw_price = 15000.0  # Realistic default fallback in CFA (e.g. 15,000 CFA)
+                        raw_price = 1500.0
+
+                    # MAGNITUDE GUARD: Fix tiny AI prices (2, 3, 5) before saving to DB
+                    if 0 < raw_price < 100:
+                        price = raw_price * 600.0
+                    else:
+                        price = raw_price
 
                     item_name = item.get("name", "Scanned Product")
                     lower_name = item_name.lower()
 
-                    # Guardrail: Enforce realistic local market pricing in CFA for footwear and general goods
+                    # Guardrail: Enforce realistic local market pricing in CFA for footwear
                     footwear_keywords = ["shoe", "sneaker", "boot", "sandal", "gazelle", "boston", "kayano", "salomon", "spezial", "1906"]
                     
                     if any(kw in lower_name for kw in footwear_keywords):
-                        # If AI hallucinates per-kg pricing or extreme dollar conversions (> 250,000 CFA per pair)
-                        if raw_price > 250000 or raw_price < 5000:
-                            price = 35000.0  # Standard local market price for quality sneakers/shoes in CFA
-                        else:
-                            price = raw_price
+                        if price > 250000 or price < 5000:
+                            price = 35000.0  # Standard local market price in CFA
                     else:
-                        # General items local pricing check
-                        if raw_price > 500000:
+                        if price > 500000:
                             price = 10000.0
-                        else:
-                            price = raw_price
 
                     try:
                         stock = int(item.get("stock_quantity", 10))
                     except (ValueError, TypeError):
                         stock = 10
 
-                    # Handle category & description sanity
                     category = item.get("category", "General")
                     if any(kw in lower_name for kw in footwear_keywords):
                         category = "Footwear"
@@ -117,7 +128,7 @@ class ProductCRUDService:
                         existing.bounding_box = item.get("bounding_box")
                         existing.price = price
                         existing.category = category
-                        existing.approved = True # STEP 2.2: Force visibility for buyers
+                        existing.approved = True
                         saved_products.append(existing)
                     else:
                         new_product = Product(
@@ -126,7 +137,7 @@ class ProductCRUDService:
                             name=item_name,
                             image_url=clean_path,
                             bounding_box=item.get("bounding_box"),
-                            approved=True, # STEP 2.2: Ensure new products show up for buyers
+                            approved=True, 
                             price=price,
                             stock_quantity=stock,
                             category=category,
@@ -151,7 +162,6 @@ class ProductCRUDService:
         if not product:
             return None
 
-        # Scope restriction access gates
         if not is_admin and product.vendor_id != vendor_id:
             raise ValueError("You do not have permission to modify this product.")
 
@@ -169,6 +179,12 @@ class ProductCRUDService:
                 product.image_url = image_record.storage_url
 
         update_dict = data.model_dump(exclude_unset=True)
+        
+        # Apply Magnitude Guard to individual updates
+        if "price" in update_dict and update_dict["price"] is not None:
+            if 0 < update_dict["price"] < 100:
+                update_dict["price"] = update_dict["price"] * 600.0
+
         for key, value in update_dict.items():
             setattr(product, key, value)
 

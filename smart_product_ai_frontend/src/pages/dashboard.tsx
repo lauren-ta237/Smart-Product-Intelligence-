@@ -5,6 +5,7 @@ import { useCart } from "../store/cart";
 import { useWishlist } from "../store/wishlist";
 
 import Upload from "../features/upload/UploadDropzone";
+import ProductCreateForm from "../components/products/ProductCreateForm";
 
 import { formatImageUrl, normalizeBoundingBox } from "../api/imageUtils";
 import { getProducts } from "../api/products";
@@ -82,7 +83,6 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
   } | null;
 
   const isVendor = user?.role?.toLowerCase() === "vendor";
-  const isVerified = Boolean(user?.is_verified);
 
   return (
     <header className="flex flex-col lg:flex-row justify-between lg:items-center gap-6 border-b border-white/10 pb-8">
@@ -92,7 +92,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
         </h1>
 
         <p className="text-slate-500 mt-1 text-[10px] font-bold uppercase tracking-widest">
-          AI-Verified Inventory • Express Fulfillment
+          AI-Verified Inventory • Express Fulfillment (XAF)
         </p>
       </div>
 
@@ -170,12 +170,21 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
           </button>
         )}
 
-        <button
-          onClick={() => useAuth.getState().logout()}
-          className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-xs font-black uppercase cursor-pointer transition-all"
-        >
-          Logout
-        </button>
+        {user ? (
+          <button
+            onClick={() => useAuth.getState().logout()}
+            className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-xs font-black uppercase cursor-pointer transition-all"
+          >
+            Logout
+          </button>
+        ) : (
+          <Link
+            to="/login"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl text-xs font-black uppercase cursor-pointer transition-all shadow-lg shadow-indigo-900/40"
+          >
+            Sign In
+          </Link>
+        )}
       </div>
     </header>
   );
@@ -188,13 +197,12 @@ export default function Dashboard() {
   const location = useLocation();
 
   const [cartOpen, setCartOpen] = useState(false);
-
-  const [marketplaceProducts, setMarketplaceProducts] = useState<
-    ProduceItem[]
-  >([]);
-
+  const [marketplaceProducts, setMarketplaceProducts] = useState<ProduceItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Toggle between AI and Manual creation for Vendors
+  const [vendorCreationMode, setVendorCreationMode] = useState<"ai" | "manual">("ai");
 
   const [activeTab, setActiveTab] = useState<"marketplace" | "activity">(
     location.pathname.includes("wishlist") ||
@@ -216,6 +224,8 @@ export default function Dashboard() {
     role?: string;
     is_verified?: boolean;
   } | null;
+
+  const token = useAuth((state) => state.token);
 
   const isVendor = user?.role?.toLowerCase() === "vendor";
   const isVerified = Boolean(user?.is_verified);
@@ -253,11 +263,13 @@ export default function Dashboard() {
 
   const getCroppedStyle = useCallback(
     (box: any): React.CSSProperties => {
-      if (!box) {
+      // Fallback for manual products (no bounding box)
+      if (!box || Object.keys(box).length === 0) {
         return {
           width: "100%",
           height: "100%",
           objectFit: "cover",
+          position: "relative",
         };
       }
 
@@ -310,28 +322,6 @@ export default function Dashboard() {
         };
       }
 
-      if (
-        typeof box === "object" &&
-        "ymin" in box &&
-        "xmin" in box &&
-        "ymax" in box &&
-        "xmax" in box
-      ) {
-        const w = Number(box.xmax) - Number(box.xmin);
-        const h = Number(box.ymax) - Number(box.ymin);
-
-        if (w > 0 && h > 0) {
-          return {
-            position: "absolute",
-            maxWidth: "none",
-            width: `${100 / w}%`,
-            height: `${100 / h}%`,
-            left: `-${(Number(box.xmin) / w) * 100}%`,
-            top: `-${(Number(box.ymin) / h) * 100}%`,
-          };
-        }
-      }
-
       return {
         width: "100%",
         height: "100%",
@@ -347,66 +337,28 @@ export default function Dashboard() {
 
   const mapRawToProduceItem = useCallback(
     (item: RawProduct, fallbackImage = ""): ProduceItem => {
-      const activePrice =
-        item.price ?? item.suggested_price ?? item.unit_price;
-
+      const activePrice = item.price ?? item.suggested_price ?? item.unit_price;
       const rawPrice = Number(activePrice);
-
-      const parsedPrice =
-        !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : 5.0;
-
-      const finalUrl =
-        item.image_url || item.imageUrl || fallbackImage || "";
+      const parsedPrice = !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : 1500.0;
+      const finalUrl = item.image_url || item.imageUrl || fallbackImage || "";
 
       let boxes: BoundingBox[] = [];
-
       if (item.bounding_box) {
         const normalized = normalizeBoundingBox(item.bounding_box);
-
-        if (normalized) {
-          boxes = [normalized];
-        }
-      } else if (item.boundingBoxes || item.bounding_boxes) {
-        const rawBoxes =
-          item.boundingBoxes || item.bounding_boxes || [];
-
-        boxes = rawBoxes
-          .map((b) => normalizeBoundingBox(b))
-          .filter(Boolean) as BoundingBox[];
+        if (normalized) boxes = [normalized];
       }
 
       return {
-        id: String(
-          item.id ||
-            `prod-${Math.random().toString(36).substring(2, 9)}`
-        ),
-
-        name: String(
-          item.name || item.brand || "AI-Verified Produce"
-        ),
-
-        category: String(
-          item.category || "Fresh Produce"
-        ),
-
-        confidence_score:
-          typeof item.confidence_score === "number"
-            ? item.confidence_score
-            : 0.95,
-
+        id: String(item.id || `prod-${Math.random().toString(36).substring(2, 9)}`),
+        name: String(item.name || item.brand || "AI-Verified Produce"),
+        category: String(item.category || "Fresh Produce"),
+        confidence_score: typeof item.confidence_score === "number" ? item.confidence_score : 0.95,
         imageUrl: finalUrl,
-
         price: parsedPrice,
-
         bounding_box: item.bounding_box,
-
         boundingBoxes: boxes,
-
         stock: item.stock_quantity ?? 50,
-
-        vendor_id: item.vendor_id
-          ? String(item.vendor_id)
-          : undefined,
+        vendor_id: item.vendor_id ? String(item.vendor_id) : undefined,
       };
     },
     []
@@ -419,9 +371,9 @@ export default function Dashboard() {
   const refreshProductsData = useCallback(async () => {
     try {
       setLoading(true);
-
-      const data = await getProducts({ approved: true });
-
+      // Removed { approved: true } restriction to allow unapproved products 
+      // to display on the marketplace immediately.
+      const data = await getProducts({});
       const rawProducts: RawProduct[] = Array.isArray(data)
         ? data
         : Array.isArray((data as any)?.items)
@@ -434,85 +386,40 @@ export default function Dashboard() {
 
       setMarketplaceProducts(mapped);
 
-      if (!isVendor) {
-        const ordersRes = await getBuyerOrders();
-        setBuyerOrders(ordersRes || []);
+      if (!isVendor && user && token) {
+        try {
+          const ordersRes = await getBuyerOrders();
+          setBuyerOrders(ordersRes || []);
+        } catch (orderErr) {
+          console.error("Non-critical: Order fetching failed.", orderErr);
+        }
       }
     } catch (error) {
       console.error("Marketplace Sync Error:", error);
     } finally {
       setLoading(false);
     }
-  }, [mapRawToProduceItem, isVendor]);
+  }, [mapRawToProduceItem, isVendor, user, token]);
 
   useEffect(() => {
     refreshProductsData();
   }, [refreshProductsData]);
 
   // ---------------------------------------------------------
-  // HANDLE NEW UPLOAD
-  // ---------------------------------------------------------
-
-  useEffect(() => {
-    const handleNewUpload = (event: Event) => {
-      const customEvent =
-        event as CustomEvent<{
-          image_url: string;
-          products: RawProduct[];
-        }>;
-
-      const { image_url, products } =
-        customEvent.detail || {};
-
-      if (Array.isArray(products) && products.length > 0) {
-        const formattedProducts: ProduceItem[] =
-          products.map((item) =>
-            mapRawToProduceItem(item, image_url)
-          );
-
-        setMarketplaceProducts((prev) => [
-          ...formattedProducts,
-          ...prev,
-        ]);
-      }
-    };
-
-    window.addEventListener(
-      "produceUploaded",
-      handleNewUpload
-    );
-
-    return () =>
-      window.removeEventListener(
-        "produceUploaded",
-        handleNewUpload
-      );
-  }, [mapRawToProduceItem]);
-
-  // ---------------------------------------------------------
   // REFRESH AFTER PRODUCT SAVE
   // ---------------------------------------------------------
 
   useEffect(() => {
-    window.addEventListener(
-      "products:updated",
-      refreshProductsData
-    );
-
-    return () =>
-      window.removeEventListener(
-        "products:updated",
-        refreshProductsData
-      );
+    window.addEventListener("products:updated", refreshProductsData);
+    return () => window.removeEventListener("products:updated", refreshProductsData);
   }, [refreshProductsData]);
 
   // ---------------------------------------------------------
-  // CART
+  // CART & WISHLIST HANDLERS
   // ---------------------------------------------------------
 
   const handleAddToCart = useCallback(
     (product: ProduceItem) => {
-      // 🟢 Redirect to login if user is not authenticated
       if (!user) {
         navigate("/login");
         return;
@@ -521,7 +428,7 @@ export default function Dashboard() {
       addToCart({
         id: product.id,
         name: product.name,
-        price: product.price ?? 5.0,
+        price: product.price ?? 1500.0,
         category: product.category ?? "Fresh Produce",
         icon: "🥦",
         vendor_id: product.vendor_id,
@@ -530,12 +437,7 @@ export default function Dashboard() {
     [addToCart, user, navigate]
   );
 
-  // ---------------------------------------------------------
-  // WISHLIST
-  // ---------------------------------------------------------
-
   const handleToggleWishlist = (product: ProduceItem) => {
-    // 🟢 Redirect to login if user is not authenticated
     if (!user) {
       navigate("/login");
       return;
@@ -593,20 +495,7 @@ export default function Dashboard() {
 
             <p className="text-xs text-slate-400 leading-relaxed">
               Your vendor registration is currently being verified by
-              our platform administrators. You will automatically
-              receive dashboard access once verified.
-            </p>
-          </div>
-
-          <div className="bg-slate-950/60 p-4 rounded-xl border border-white/5 text-left text-[11px] text-slate-500 space-y-1">
-            <p>
-              • Verification normally takes less than 24 business
-              hours.
-            </p>
-
-            <p>
-              • You can contact help@smartproduct.ai for status query
-              tickets.
+              our platform administrators.
             </p>
           </div>
 
@@ -637,23 +526,16 @@ export default function Dashboard() {
           setActiveTab={setActiveTab}
         />
 
-        {/* =====================================================
-            VENDOR DASHBOARD
-            ===================================================== */}
-
         {isVendor ? (
           <main className="space-y-8 animate-in fade-in duration-200">
             {/* STATS */}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   Sales Revenue
                 </span>
-
                 <h3 className="text-3xl font-black text-emerald-400 mt-2">
-                  
-                  {Math.round(stats?.revenue ?? 0).toLocaleString()}FCFA
+                  {Math.round(stats?.revenue ?? 0).toLocaleString()} FCFA
                 </h3>
               </div>
 
@@ -661,7 +543,6 @@ export default function Dashboard() {
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   New Orders
                 </span>
-
                 <h3 className="text-3xl font-black text-amber-400 mt-2">
                   {stats?.new_orders ?? 0}
                 </h3>
@@ -671,7 +552,6 @@ export default function Dashboard() {
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   Pending Fulfillment
                 </span>
-
                 <h3 className="text-3xl font-black text-indigo-400 mt-2">
                   {stats?.pending_orders ?? 0}
                 </h3>
@@ -679,491 +559,192 @@ export default function Dashboard() {
 
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Completed Orders
-                </span>
-
-                <h3 className="text-3xl font-black text-emerald-400 mt-2">
-                  {stats?.completed_orders ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Low Stock Alerts
-                </span>
-
-                <h3 className="text-3xl font-black text-rose-400 mt-2">
-                  {stats?.low_stock_alerts ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Listed Products
-                </span>
-
-                <h3 className="text-3xl font-black text-slate-100 mt-2">
-                  {stats?.products ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Images Scanned
-                </span>
-
-                <h3 className="text-3xl font-black text-slate-100 mt-2">
-                  {stats?.images ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   AI Accuracy
                 </span>
-
                 <h3 className="text-3xl font-black text-cyan-400 mt-2">
                   {((stats?.accuracy ?? 0.96) * 100).toFixed(1)}%
                 </h3>
               </div>
             </div>
 
-            {/* QUICK AI VERIFICATION */}
-
+            {/* PRODUCT MANAGEMENT HUB */}
             <div className="grid grid-cols-1 gap-6">
-              <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
-                <div className="border-b border-white/10 pb-3">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <span>📸</span>
-                    Quick AI Verification
-                  </h2>
+              <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-white/10 pb-4">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                      <span>📦</span> Product Management
+                    </h2>
+                    <p className="text-[11px] text-slate-500 uppercase font-black tracking-widest">
+                      Choose creation workflow
+                    </p>
+                  </div>
 
-                  <p className="text-slate-400 text-xs mt-1">
-                    Upload new produce images for AI quality audit
-                  </p>
+                  <div className="flex bg-slate-950 p-1 rounded-2xl border border-white/5 self-start">
+                    <button
+                      onClick={() => setVendorCreationMode("ai")}
+                      className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        vendorCreationMode === "ai" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/40" : "text-slate-500 hover:text-white"
+                      }`}
+                    >
+                      AI Assistant
+                    </button>
+                    <button
+                      onClick={() => setVendorCreationMode("manual")}
+                      className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        vendorCreationMode === "manual" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/40" : "text-slate-500 hover:text-white"
+                      }`}
+                    >
+                      Manual Entry
+                    </button>
+                  </div>
                 </div>
 
-                <Upload />
+                {vendorCreationMode === "ai" ? (
+                  <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl text-[11px] text-indigo-300 leading-relaxed">
+                      <strong>✨ AI Assistant:</strong> Upload a physical shelf image. Gemini will automatically detect items, estimate pricing, and extract attributes.
+                    </div>
+                    <Upload />
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in zoom-in-95 duration-300">
+                    <ProductCreateForm 
+                      onSuccess={() => {
+                        setVendorCreationMode("ai");
+                        refreshProductsData();
+                      }}
+                      onCancel={() => setVendorCreationMode("ai")}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* MY STORE INVENTORY */}
-
             <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6">
               <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    My Store Inventory
-                  </h2>
-
-                  <p className="text-slate-400 text-xs mt-1">
-                    Real-time shelf placement & stock configurations
-                  </p>
-                </div>
-
-                <Link
-                  to="/review"
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline"
-                >
+                <h2 className="text-2xl font-bold text-white">My Store Inventory</h2>
+                <Link to="/review" className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline">
                   View Full Catalog History →
                 </Link>
               </div>
-
+              
               {marketplaceProducts.length === 0 ? (
                 <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl">
-                  Your store inventory ledger is empty. Upload produce
-                  photos above to parse products.
+                  Inventory ledger empty. List products above.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {marketplaceProducts.map((p) => {
-                    return (
-                      <div
-                        key={p.id}
-                        className="bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden"
-                      >
-                        {(() => {
-                          const imageUrl =
-                            p.imageUrl ||
-                            (p as any).image_url;
-
-                          const formattedUrl =
-                            formatImageUrl(imageUrl);
-
-                          const normalizedBox =
-                            normalizeBoundingBox(p.bounding_box);
-
-                          let imgStyle: React.CSSProperties = {
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          };
-
-                          if (
-                            normalizedBox &&
-                            normalizedBox.width > 0 &&
-                            normalizedBox.height > 0
-                          ) {
-                            imgStyle = {
-                              position: "absolute",
-                              maxWidth: "none",
-                              maxHeight: "none",
-                              width: `${
-                                100 *
-                                (100 / normalizedBox.width)
-                              }%`,
-                              height: `${
-                                100 *
-                                (100 / normalizedBox.height)
-                              }%`,
-                              left: `-${
-                                normalizedBox.x *
-                                (100 / normalizedBox.width)
-                              }%`,
-                              top: `-${
-                                normalizedBox.y *
-                                (100 / normalizedBox.height)
-                              }%`,
-                            };
-                          }
-
-                          return (
-                            <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
-                              {formattedUrl ? (
-                                <img
-                                  src={formattedUrl}
-                                  alt={
-                                    p.name ||
-                                    "Inventory Item"
-                                  }
-                                  className="max-w-none absolute transition-all duration-300"
-                                  style={imgStyle}
-                                  onError={(e) => {
-                                    console.error(
-                                      "[Vendor Dashboard Image Error] Failed to load:",
-                                      formattedUrl
-                                    );
-
-                                    e.currentTarget.style.display =
-                                      "none";
-                                  }}
-                                />
-                              ) : (
-                                <div className="text-[10px] font-bold text-slate-600 uppercase">
-                                  No Image Available
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        <div className="p-4">
-                          <h4 className="font-bold text-sm truncate text-white">
-                            {p.name}
-                          </h4>
-
-                          <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
-                            <span>
-                              Qty:{" "}
-                              <strong className="text-slate-200">
-                                {p.stock ?? 10} units
-                              </strong>
-                            </span>
-
-                            <span className="text-emerald-400 font-bold">
-                              {Math.round((p.price ?? 0) * 600).toLocaleString()} FCFA
-                            </span>
-                          </div>
+                  {marketplaceProducts.map((p) => (
+                    <div key={p.id} className="bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden">
+                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
+                        <img
+                          src={formatImageUrl(p.imageUrl || (p as any).image_url)}
+                          alt={p.name}
+                          className={!p.bounding_box ? "w-full h-full object-cover relative transition-all duration-300" : "max-w-none absolute transition-all duration-300"}
+                          style={getCroppedStyle(p.bounding_box)}
+                          onError={(e) => (e.currentTarget.style.display = "none")}
+                        />
+                      </div>
+                      <div className="p-4">
+                        <h4 className="font-bold text-sm truncate text-white">{p.name}</h4>
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
+                          <span>Qty: <strong className="text-slate-200">{p.stock ?? 10} units</strong></span>
+                          <span className="text-emerald-400 font-bold">{Math.round(p.price ?? 0).toLocaleString()} FCFA</span>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </main>
         ) : activeTab === "marketplace" ? (
-          /* =====================================================
-             BUYER MARKETPLACE
-             ===================================================== */
-
+          /* BUYER MARKETPLACE VIEW */
           <main className="space-y-6 animate-in fade-in duration-200">
             <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    Available Produce
-                  </h2>
-
-                  <p className="text-slate-400 text-xs mt-1">
-                    Fresh, AI-inspected batch offerings from verified
-                    vendors
-                  </p>
+                  <h2 className="text-2xl font-bold text-white">Available Produce</h2>
+                  <p className="text-slate-400 text-xs mt-1">Fresh offerings from verified vendors (FCFA)</p>
                 </div>
-
                 <button
                   onClick={() => setActiveTab("activity")}
                   className="text-emerald-400 hover:text-emerald-300 text-xs font-bold underline transition-colors cursor-pointer"
                 >
-                  View My Previous Orders & Activity →
+                  View Activity →
                 </button>
               </div>
 
               {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4 animate-pulse">
                   {[1, 2, 3].map((n) => (
-                    <div
-                      key={n}
-                      className="bg-white/5 border border-white/5 p-5 rounded-2xl animate-pulse space-y-4"
-                    >
-                      <div className="h-44 bg-slate-900 rounded-xl" />
-                      <div className="h-4 bg-slate-800 rounded w-3/4" />
-                      <div className="h-3 bg-slate-800 rounded w-1/2" />
-                      <div className="h-10 bg-slate-800 rounded-xl" />
-                    </div>
+                    <div key={n} className="h-64 bg-white/5 rounded-2xl" />
                   ))}
                 </div>
               ) : filteredProducts.length === 0 ? (
-                <div className="py-16 text-center text-slate-400 text-sm bg-white/[0.01] rounded-2xl border border-dashed border-white/10">
-                  <span className="text-3xl block mb-2">
-                    🔍
-                  </span>
-
-                  {searchQuery
-                    ? `No produce matching "${searchQuery}"`
-                    : "No products available in the catalog yet."}
-                </div>
+                <div className="py-16 text-center text-slate-400 text-sm">No products found.</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {filteredProducts.map((prod) => {
-                    const isWishlisted = isInWishlist(prod.id);
-
-                    const isElectronics =
-                      prod.category?.toLowerCase() ===
-                        "electronics" ||
-                      prod.name
-                        .toLowerCase()
-                        .includes("iphone");
-
-                    return (
-                      <div
-                        key={prod.id}
-                        className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 flex flex-col justify-between transition-all hover:border-white/20 hover:bg-white/[0.07] relative group"
+                  {filteredProducts.map((prod) => (
+                    <div key={prod.id} className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 relative group transition-all hover:bg-white/[0.07]">
+                      <button
+                        onClick={() => handleToggleWishlist(prod)}
+                        className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm cursor-pointer"
                       >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleToggleWishlist(prod)
-                          }
-                          className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-                          title={
-                            isWishlisted
-                              ? "Remove from Wishlist"
-                              : "Add to Wishlist"
-                          }
-                        >
-                          {isWishlisted ? "⭐" : "☆"}
-                        </button>
-
-                        <div>
-                          {/* BUYER IMAGE BLOCK
-                              SAME RENDERING AS VENDOR DASHBOARD */}
-
-                          {(() => {
-                            const imageUrl =
-                              prod.imageUrl ||
-                              (prod as any).image_url;
-
-                            const formattedUrl =
-                              formatImageUrl(imageUrl);
-
-                            const normalizedBox =
-                              normalizeBoundingBox(
-                                prod.bounding_box
-                              );
-
-                            let imgStyle: React.CSSProperties = {
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                            };
-
-                            if (
-                              normalizedBox &&
-                              normalizedBox.width > 0 &&
-                              normalizedBox.height > 0
-                            ) {
-                              imgStyle = {
-                                position: "absolute",
-                                maxWidth: "none",
-                                maxHeight: "none",
-                                width: `${
-                                  100 *
-                                  (100 /
-                                    normalizedBox.width)
-                                }%`,
-                                height: `${
-                                  100 *
-                                  (100 /
-                                    normalizedBox.height)
-                                }%`,
-                                left: `-${
-                                  normalizedBox.x *
-                                  (100 /
-                                    normalizedBox.width)
-                                }%`,
-                                top: `-${
-                                  normalizedBox.y *
-                                  (100 /
-                                    normalizedBox.height)
-                                }%`,
-                              };
-                            }
-
-                            return (
-                              <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
-                                {formattedUrl ? (
-                                  <img
-                                    src={formattedUrl}
-                                    alt={
-                                      prod.name ||
-                                      "Produce"
-                                    }
-                                    className="max-w-none absolute transition-all duration-300"
-                                    style={imgStyle}
-                                    onError={(e) => {
-                                      console.error(
-                                        "[Buyer Dashboard Image Error] Failed to load:",
-                                        formattedUrl
-                                      );
-
-                                      e.currentTarget.style.display =
-                                        "none";
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="text-[10px] font-bold text-slate-600 uppercase">
-                                    No Image Available
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-
-                          <div className="relative">
-                            <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black text-emerald-400 border border-emerald-500/20 z-10">
-                              ✨ AI VERIFIED
-                            </div>
-                          </div>
-
-                          <h3 className="font-bold text-lg text-white truncate h-7 mt-3">
-                            {prod.name}
-                          </h3>
-
-                          <p className="text-xs text-slate-400 h-4">
-                            {prod.category || "Fresh Produce"}
-                          </p>
-
-                          <div className="flex justify-between items-center mt-2">
-                            <p className="text-base font-bold text-emerald-400">
-                              $
-                              {(prod.price ?? 5.0).toFixed(
-                                2
-                              )}{" "}
-                              /{" "}
-                              {isElectronics
-                                ? "unit"
-                                : "kg"}
-                            </p>
-
-                            <span className="text-[10px] text-slate-500 font-medium">
-                              Stock:{" "}
-                              {prod.stock ?? 25} units
-                            </span>
-                          </div>
+                        {isInWishlist(prod.id) ? "⭐" : "☆"}
+                      </button>
+                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl flex items-center justify-center">
+                        <img
+                          src={formatImageUrl(prod.imageUrl || (prod as any).image_url)}
+                          alt={prod.name}
+                          className={!prod.bounding_box ? "w-full h-full object-cover relative transition-all duration-300" : "max-w-none absolute transition-all duration-300"}
+                          style={getCroppedStyle(prod.bounding_box)}
+                          onError={(e) => (e.currentTarget.style.display = "none")}
+                        />
+                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black text-emerald-400 border border-emerald-500/20">
+                          ✨ AI VERIFIED
                         </div>
-
-                        <button
-                          onClick={() =>
-                            handleAddToCart(prod)
-                          }
-                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-lg shadow-emerald-950/50 mt-4"
-                        >
-                          Add to Cart
-                        </button>
                       </div>
-                    );
-                  })}
+                      <h3 className="font-bold text-lg text-white truncate mt-3">{prod.name}</h3>
+                      <div className="flex justify-between items-center">
+                        <p className="text-base font-bold text-emerald-400">{Math.round(prod.price ?? 1500).toLocaleString()} FCFA</p>
+                        <span className="text-[10px] text-slate-500 font-medium">Stock: {prod.stock ?? 25} units</span>
+                      </div>
+                      <button
+                        onClick={() => handleAddToCart(prod)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-lg"
+                      >
+                        Add to Cart
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </main>
         ) : (
-          /* =====================================================
-             ACTIVITY
-             ===================================================== */
-
+          /* ACTIVITY / USER DASHBOARD VIEW */
           <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-200">
             <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl lg:col-span-2 space-y-6">
-              <div>
-                <h3 className="text-xl font-bold text-white">
-                  Recent Orders & Shipment Tracking
-                </h3>
-
-                <p className="text-slate-400 text-xs">
-                  Simulated Sandbox Order Shipments
-                </p>
-              </div>
-
-              {buyerOrders.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl">
-                  You have not placed any orders yet. Add items to your
-                  cart to purchase.
+              <h3 className="text-xl font-bold text-white">Recent Orders</h3>
+              {!user ? (
+                <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl space-y-4">
+                  <p>Please sign in to view your activity.</p>
+                  <Link to="/login" className="inline-block bg-indigo-600 px-4 py-2 rounded-xl font-black uppercase text-white">Sign In</Link>
                 </div>
+              ) : buyerOrders.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl">No orders found.</div>
               ) : (
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                <div className="space-y-4">
                   {buyerOrders.map((ord) => (
-                    <div
-                      key={ord.id}
-                      className="bg-slate-900/60 p-4 rounded-2xl border border-white/5 space-y-3"
-                    >
-                      <div className="flex justify-between text-[11px] font-semibold text-slate-400 font-mono">
-                        <span>
-                          OrderID:{" "}
-                          <strong className="text-slate-200">
-                            {ord.id.substring(0, 13)}...
-                          </strong>
-                        </span>
-
-                        <span>{ord.date}</span>
+                    <div key={ord.id} className="bg-slate-900/60 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
+                      <div>
+                        <p className="text-xs font-bold text-white">Order {ord.id.substring(0, 8)}</p>
+                        <p className="text-[10px] text-slate-400">{ord.date}</p>
                       </div>
-
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-300 font-medium truncate max-w-xs">
-                          {ord.items
-                            ?.map(
-                              (i: any) =>
-                                `${i.product_name} x${i.quantity}`
-                            )
-                            .join(", ")}
-                        </span>
-
-                        <span className="font-mono text-emerald-400 font-bold">
-                          ${ord.total_price}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between items-center pt-2 border-t border-white/5 text-[10px]">
-                        <span className="text-slate-500 font-mono">
-                          Carrier:{" "}
-                          {ord.carrier ||
-                            "Sandbox logistics"}
-                        </span>
-
-                        <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded font-bold uppercase">
-                          {ord.status}
-                        </span>
-                      </div>
+                      <span className="font-mono text-emerald-400 font-bold">{Math.round(ord.total_price).toLocaleString()} FCFA</span>
+                      <span className="bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold">{ord.status}</span>
                     </div>
                   ))}
                 </div>
@@ -1171,262 +752,70 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-6">
-              {/* PROFILE */}
-
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  Profile Credentials
-                </h3>
-
-                <div className="space-y-1 text-xs">
-                  <p className="text-slate-500">
-                    Email:{" "}
-                    <strong className="text-slate-300 font-mono font-medium">
-                      {user?.email}
-                    </strong>
-                  </p>
-
-                  <p className="text-slate-500">
-                    Account Role:{" "}
-                    <span className="bg-indigo-500/15 text-indigo-400 px-2 py-0.5 rounded font-bold font-mono text-[10px]">
-                      {user?.role}
-                    </span>
-                  </p>
-                </div>
+                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">Profile</h3>
+                {user ? (
+                  <div className="text-xs space-y-1">
+                    <p className="text-slate-500">Email: <strong className="text-slate-300">{user.email}</strong></p>
+                    <p className="text-slate-500">Role: <span className="text-indigo-400 uppercase font-bold">{user.role}</span></p>
+                  </div>
+                ) : <p className="text-[11px] text-slate-500">Guest mode</p>}
               </div>
 
-              {/* WISHLIST */}
-
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  My Wishlist Favorites
-                </h3>
-
-                {wishlistItems.length === 0 ? (
-                  <p className="text-[11px] text-slate-500 py-3 text-center">
-                    Your wishlist is empty. Add products on the
-                    marketplace.
-                  </p>
+                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">Wishlist</h3>
+                {!user ? (
+                  <p className="text-[11px] text-slate-500 text-center">Login to save items.</p>
+                ) : wishlistItems.length === 0 ? (
+                  <p className="text-[11px] text-slate-500 text-center">Empty.</p>
                 ) : (
-                  <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1">
-                    {wishlistItems.map((fav) => {
-                      const favoriteImageUrl =
-                        formatImageUrl(fav.imageUrl);
-
-                      return (
-                        <div
-                          key={fav.id}
-                          className="flex justify-between items-center text-xs bg-slate-900/40 p-2 rounded-xl border border-white/5"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            {favoriteImageUrl ? (
-                              <img
-                                src={favoriteImageUrl}
-                                alt={fav.name}
-                                className="w-8 h-8 rounded-lg object-cover border border-white/10 shrink-0"
-                                onError={(e) => {
-                                  e.currentTarget.style.display =
-                                    "none";
-                                }}
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-white/10 shrink-0 flex items-center justify-center text-[10px]">
-                                📦
-                              </div>
-                            )}
-
-                            <div className="truncate">
-                              <span className="text-slate-200 font-semibold block truncate text-[11px]">
-                                {fav.name}
-                              </span>
-
-                              <span className="text-[10px] text-slate-500">
-                                $
-                                {fav.price?.toFixed(
-                                  2
-                                )}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() =>
-                                handleAddToCart(
-                                  fav
-                                )
-                              }
-                              className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-2 py-1 rounded text-[10px]"
-                            >
-                              Buy
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                removeFromWishlist(
-                                  fav.id
-                                )
-                              }
-                              className="text-slate-500 hover:text-red-400 font-bold p-1 text-[11px]"
-                              title="Remove"
-                            >
-                              ✕
-                            </button>
-                          </div>
+                  <div className="space-y-3">
+                    {wishlistItems.map((fav) => (
+                      <div key={fav.id} className="flex justify-between items-center bg-slate-900/40 p-2 rounded-xl border border-white/5">
+                        <span className="text-white text-[11px] font-semibold truncate max-w-[100px]">{fav.name}</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleAddToCart(fav)} className="bg-emerald-600 px-2 py-1 rounded text-[9px] font-bold">Buy</button>
+                          <button onClick={() => removeFromWishlist(fav.id)} className="text-slate-500 text-[9px]">✕</button>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
-
-              {/* RECOMMENDED */}
-
-              <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  Recommended For You
-                </h3>
-
-                <div className="space-y-3">
-                  {recommendedProducts.map((rec) => (
-                    <div
-                      key={rec.id}
-                      className="flex justify-between items-center text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">
-                          🥦
-                        </span>
-
-                        <span className="text-slate-200 font-medium truncate max-w-[120px]">
-                          {rec.name}
-                        </span>
-                      </div>
-
-                      <span className="font-mono text-emerald-400 font-bold text-[11px]">
-                        ${rec.price?.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* NOTIFICATIONS */}
-
-              <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  Live Alerts & Notifications
-                </h3>
-
-                <ul className="space-y-2">
-                  {notifications.map((msg, idx) => (
-                    <li
-                      key={idx}
-                      className="p-2.5 bg-slate-900/60 border border-white/5 rounded-xl text-[10px] text-slate-400 leading-relaxed flex items-start gap-2"
-                    >
-                      <span className="text-emerald-400 shrink-0">
-                        🔔
-                      </span>
-
-                      <span>{msg}</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
           </main>
         )}
       </div>
 
-      {/* =====================================================
-          CART
-          ===================================================== */}
-
+      {/* SHOPPING CART DRAWER (PRESERVED) */}
       {cartOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-end z-50 transition-opacity">
           <div className="bg-slate-900 border-l border-white/10 w-full max-w-md p-6 h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200">
             <div>
               <div className="flex justify-between items-center pb-4 border-b border-white/10">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-white">
-                    Your Cart ({totalCartCount})
-                  </h3>
-
+                  <h3 className="text-lg font-bold text-white">Your Cart ({totalCartCount})</h3>
                   {cartItems.length > 0 && (
-                    <button
-                      onClick={clearCart}
-                      className="text-[10px] text-slate-400 hover:text-red-400 underline transition-colors ml-2"
-                    >
-                      Clear all
-                    </button>
+                    <button onClick={clearCart} className="text-[10px] text-slate-400 hover:text-red-400 underline transition-colors">Clear all</button>
                   )}
                 </div>
-
-                <button
-                  onClick={() => setCartOpen(false)}
-                  className="text-slate-400 hover:text-white font-bold text-xl cursor-pointer p-1 transition-colors"
-                >
-                  ✕
-                </button>
+                <button onClick={() => setCartOpen(false)} className="text-slate-400 hover:text-white font-bold text-xl cursor-pointer">✕</button>
               </div>
 
               {cartItems.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-sm space-y-3">
-                  <span className="text-4xl block">
-                    🛒
-                  </span>
-
-                  <p>Your cart is currently empty.</p>
-                </div>
+                <div className="text-center py-12 text-slate-400 text-sm">Your cart is currently empty.</div>
               ) : (
                 <ul className="mt-4 space-y-3 max-h-[55vh] overflow-y-auto pr-1">
                   {cartItems.map((item) => (
-                    <li
-                      key={item.id}
-                      className="bg-white/5 p-3.5 rounded-xl text-sm flex justify-between items-center border border-white/5"
-                    >
+                    <li key={item.id} className="bg-white/5 p-3.5 rounded-xl text-sm flex justify-between items-center border border-white/5">
                       <div>
-                        <p className="font-semibold text-white truncate max-w-[180px]">
-                          {item.name}
-                        </p>
-
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {Math.round(item.price ?? 0).toLocaleString()} FCFA /{" "}
-                          {item.category?.toLowerCase() ===
-                          "electronics"
-                            ? "unit"
-                            : "kg"}
-                        </p>
+                        <p className="font-semibold text-white truncate max-w-[180px]">{item.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{Math.round(item.price).toLocaleString()} FCFA</p>
                       </div>
-
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() =>
-                            updateQuantity(
-                              item.id,
-                              -1
-                            )
-                          }
-                          className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs transition-colors"
-                        >
-                          -
-                        </button>
-
-                        <span className="text-white font-mono font-bold text-xs px-1">
-                          {item.quantity}
-                        </span>
-
-                        <button
-                          onClick={() =>
-                            updateQuantity(
-                              item.id,
-                              1
-                            )
-                          }
-                          className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs transition-colors"
-                        >
-                          +
-                        </button>
+                        <button onClick={() => updateQuantity(item.id, -1)} className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs">-</button>
+                        <span className="text-white font-mono font-bold text-xs px-1">{item.quantity}</span>
+                        <button onClick={() => updateQuantity(item.id, 1)} className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs">+</button>
                       </div>
                     </li>
                   ))}
@@ -1436,27 +825,15 @@ export default function Dashboard() {
 
             <div className="border-t border-white/10 pt-4 space-y-4">
               <div className="flex justify-between items-center text-white">
-                <span className="text-slate-400 text-sm">
-                  Total Amount
-                </span>
-
-                <span className="text-xl font-bold text-emerald-400">
-                {Math.round(totalCartPrice ?? 0).toLocaleString()} FCFA
-                </span>
+                <span className="text-slate-400 text-sm">Total Amount</span>
+                <span className="text-xl font-bold text-emerald-400">{Math.round(totalCartPrice).toLocaleString()} FCFA</span>
               </div>
-
               <div className="flex gap-3">
-                <button
-                  onClick={() => setCartOpen(false)}
-                  className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer"
-                >
-                  Continue Shopping
-                </button>
-
-                <button
-                  disabled={cartItems.length === 0}
-                  onClick={handleProceedToCheckout}
-                  className="w-1/2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer shadow-lg shadow-emerald-950/50"
+                <button onClick={() => setCartOpen(false)} className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer">Continue Shopping</button>
+                <button 
+                  disabled={cartItems.length === 0} 
+                  onClick={handleProceedToCheckout} 
+                  className="w-1/2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer shadow-lg shadow-emerald-950/50"
                 >
                   Proceed to Payment
                 </button>

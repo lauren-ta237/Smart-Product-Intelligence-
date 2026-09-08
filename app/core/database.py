@@ -195,6 +195,21 @@ async def init_db():
             "Ensuring users.google_id exists"
         )
 
+        # =====================================================================
+        # 🟢 MAGNITUDE SELF-HEALING: FIX EXISTING PRICES (2, 3, 5 FCFA)
+        # =====================================================================
+        # This fixes products like Mangoes and Limes that were already saved
+        # with USD-scale values in the main products table.
+        await _run_migration_step(
+            """
+            UPDATE products 
+            SET price = price * 600 
+            WHERE price > 0 AND price < 100;
+            """,
+            "Reparing existing USD-scale prices in products table (Self-Healing)"
+        )
+        # =====================================================================
+
         # Seed initial administrator account (admin@smartproduct.ai / AdminPass123!).
         print("[INIT_DB] Generating admin password hash...")
         from app.core.security import hash_password

@@ -25,11 +25,11 @@ class ProductItem(BaseModel):
     confidence_score: float = Field(default=1.0, description="The confidence calculation score between 0.0 and 1.0.")
     estimated_price: float = Field(
         default=0.0,
-        description="Estimated market retail price or global MSRP in target market currency (or USD if unknown). MUST NOT be 0.0 if item is identified."
+        description="Estimated market retail price in Central African CFA franc (FCFA/XAF). MUST NOT be 0.0 if item is identified."
     )
     currency: str = Field(
-        default="USD",
-        description="3-letter ISO currency code for estimated price (e.g., USD, EUR, XAF)."
+        default="XAF",
+        description="3-letter ISO currency code for estimated price (XAF)."
     )
     bounding_box: BoundingBoxCoordinate = Field(description="Normalized coordinates tracking object bounding wrapper.")
 
@@ -44,11 +44,17 @@ class ProductDetectionPrompt:
     """
     def build(self, country: str, language: str) -> str:
         return f"""
-    You are a strict retail audit AI. Analyze the image and ONLY return products you actually see. 
-    - If you see vegetables, name them as vegetables (e.g., 'Red Bell Pepper'). 
-    - NEVER return names like 'iPhone', 'Laptop', or 'Smartwatch' unless they are physically in the image.
+    You are a strict retail audit AI specialized in the Cameroonian market.
+    Analyze the image and ONLY return products you actually see. 
     - Return coordinates in normalized decimals (0.0 to 1.0).
     - Format: [ymin, xmin, ymax, xmax].
+    
+    PRICING RULES (FCFA):
+    - All prices MUST be in FCFA (XAF).
+    - NEVER return small numbers like 1, 2, 5, or 10.
+    - Standard produce (fruits/veg) prices are usually 200, 500, or 1000 FCFA.
+    - Apparel/Shoes are usually 5000, 10000, or 25000 FCFA.
+    - If you think an item costs 2 Dollars, you MUST return 1200 FCFA.
     """
 
 
@@ -80,15 +86,15 @@ class GeminiVisionProvider:
         self.model_name = "gemini-3.6-flash"
 
     async def analyze_image(self, image_url: str, context: dict) -> dict:
-        country = context.get("country", "US")
-        language = context.get("language", "en-US")
+        country = context.get("country", "Cameroon")
+        language = context.get("language", "en")
 
         default_prompt = ProductDetectionPrompt().build(country=country, language=language)
         user_prompt = context.get("prompt")
 
         # 🟢 Enforce pricing rules even when context['prompt'] overrides the default prompt
         if user_prompt:
-            prompt = f"{user_prompt}\n\nIMPORTANT INSTRUCTION: You MUST estimate a non-zero retail market price ('estimated_price') and provide the 3-letter currency code ('currency') for all detected commercial products. Do NOT leave estimated_price as 0.0."
+            prompt = f"{user_prompt}\n\nIMPORTANT PRICING MAGNITUDE INSTRUCTION: Prices MUST be in FCFA. NEVER use single digits like 2 or 5. 1 USD = 600 FCFA. Return realistic Cameroonian prices (e.g., 500, 1500, 2000)."
         else:
             prompt = default_prompt
         
@@ -145,8 +151,8 @@ class GeminiVisionProvider:
 
                     current_price = prod.get("estimated_price")
                     if current_price is None or float(current_price) == 0.0:
-                        prod["estimated_price"] = 14.99  # Fallback market estimation
-                        prod["currency"] = prod.get("currency") or "USD"
+                        prod["estimated_price"] = 1500.0  # Fallback market estimation
+                        prod["currency"] = "XAF"
                     
                     # Provide 'price' key alias so callers relying on 'price' receive it directly
                     prod["price"] = prod["estimated_price"]

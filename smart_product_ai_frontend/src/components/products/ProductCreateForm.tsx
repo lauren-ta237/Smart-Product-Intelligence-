@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useProducts } from "../../hooks/useProducts";
 import { uploadImage } from "../../api/images";
 
@@ -14,34 +14,53 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
   // Form Field States
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState("General");
   const [description, setDescription] = useState("");
-  const [sku, setSku] = useState("");
-  const [skuUs, setSkuUs] = useState("");
-  const [skuCm, setSkuCm] = useState("");
-  const [marketSku, setMarketSku] = useState("");
+  const [price, setPrice] = useState<number | "">("");
+  const [stock, setStock] = useState<number>(1);
   
   // Media Reference States
   const [imageId, setImageId] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState("");
+  const [serverImageUrl, setServerImageUrl] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Handles async file attachment and maps references
+  // Clean up browser object URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Handles immediate local preview and async server upload
   const handleImageFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // 1. Create immediate local Blob URL for the preview (Problem A fix)
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const localBlob = URL.createObjectURL(file);
+    setPreviewUrl(localBlob);
+
+    // 2. Upload to server to get permanent image reference (Problem B fix)
     setUploadingImage(true);
     setErrorMsg(null);
 
     try {
       const response = await uploadImage(file);
-      setImageId(response.id);
-      setImageUrl(response.url);
+      // Corrected: Backend MediaResponse returns storage_url, not url
+      if (response && response.id) {
+        setImageId(response.id);
+        // We capture 'storage_url' which is the relative path (e.g. uploads/abc.jpg)
+        setServerImageUrl(response.storage_url);
+      }
     } catch (err: any) {
-      setErrorMsg("Failed to upload media asset reference. Try again.");
-      console.error(err);
+      setErrorMsg("Failed to sync media to server. Please try again.");
+      setPreviewUrl(null); 
+      console.error("[Manual Upload Error]", err);
     } finally {
       setUploadingImage(false);
     }
@@ -49,214 +68,222 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setErrorMsg("Product Name is required.");
+    
+    if (!name.trim() || price === "" || price <= 0) {
+      setErrorMsg("Please provide a valid product name and price.");
+      return;
+    }
+
+    if (!imageId) {
+      setErrorMsg("Please upload a product image first.");
       return;
     }
 
     setErrorMsg(null);
 
     try {
-      await createProduct({
-        name,
+      const payload = {
+        name: name.trim(),
         brand: brand.trim() || undefined,
         category: category.trim() || undefined,
         description: description.trim() || undefined,
-        sku: sku.trim() || undefined,
-        sku_us: skuUs.trim() || undefined,
-        sku_cm: skuCm.trim() || undefined,
-        market_sku: marketSku.trim() || undefined,
-        image_url: imageUrl || undefined,
-        image_id: imageId || undefined,
-        approved: false
-      });
+        price: Number(price),
+        stock_quantity: Number(stock),
+        // Send the server-verified image references
+        image_id: imageId,
+        image_url: serverImageUrl || undefined,
+        approved: false 
+      };
 
+      console.log("[ProductCreate] Submitting manual payload:", payload);
+
+      await createProduct(payload);
+
+      // Reset form
+      setName("");
+      setPrice("");
+      setBrand("");
+      setDescription("");
+      setImageId(null);
+      setServerImageUrl("");
+      setPreviewUrl(null);
+      
       if (onSuccess) {
         onSuccess();
       }
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.detail || "Could not save catalog entry.");
+      setErrorMsg(err.response?.data?.detail || "Could not save manual catalog entry.");
     }
   };
 
   return (
-    <div className="bg-slate-900/90 border border-white/10 rounded-3xl p-6 shadow-2xl max-w-2xl w-full text-slate-200">
-      <div className="border-b border-white/5 pb-4 mb-6">
-        <h2 className="text-2xl font-bold tracking-tight text-white">List Manual Product</h2>
-        <p className="text-xs text-slate-400 mt-1">
-          Create standard catalog entries with linked local file storage attachments.
-        </p>
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl text-slate-200">
+        <div className="border-b border-white/10 pb-4 mb-6">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <span>📝</span> Manual Product Entry
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Specify your inventory details. Note: SKU and location fields are handled automatically.
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 text-xs flex items-center gap-2">
+            <span>⚠️</span> {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleFormSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            
+            {/* Visuals & Media */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Product Image *
+                </label>
+                <div 
+                  onClick={() => !uploadingImage && fileInputRef.current?.click()}
+                  className={`relative h-64 w-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all duration-200 overflow-hidden ${
+                    previewUrl ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-white/10 bg-slate-950/50 hover:bg-white/[0.02]'
+                  } ${uploadingImage ? 'opacity-50 cursor-wait' : ''}`}
+                >
+                  {previewUrl ? (
+                    <>
+                      <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <span className="bg-slate-900/90 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Replace Image</span>
+                      </div>
+                      {uploadingImage && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mb-2"></div>
+                          <span className="text-[9px] font-black uppercase tracking-tighter">Syncing...</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-3xl mb-2">{uploadingImage ? '⏳' : '📷'}</span>
+                      <span className="text-[10px] font-bold uppercase text-slate-400">
+                        {uploadingImage ? 'Uploading Media...' : 'Click to Upload Image'}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleImageFileChange}
+                  className="hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Description
+                </label>
+                <textarea
+                  rows={4}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50 resize-none transition-all"
+                  placeholder="e.g. Hand made and available in any quantity..."
+                />
+              </div>
+            </div>
+
+            {/* Data Inputs */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Product Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. man made basket"
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-bold focus:outline-none focus:border-indigo-500/50 transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                    Price (FCFA) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="4000"
+                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-emerald-400 font-mono text-sm font-bold focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                    Stock Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={stock}
+                    onChange={(e) => setStock(Number(e.target.value))}
+                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Brand (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  placeholder="Local Craft"
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-4 pt-6 border-t border-white/10">
+            <button
+              type="submit"
+              disabled={isCreating || uploadingImage}
+              className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-900/20 cursor-pointer"
+            >
+              {isCreating ? "Saving to Database..." : "Confirm Listing"}
+            </button>
+            
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 font-bold rounded-2xl text-xs uppercase tracking-widest transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
-
-      {errorMsg && (
-        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs">
-          ⚠️ {errorMsg}
-        </div>
-      )}
-
-      <form onSubmit={handleFormSubmit} className="space-y-4">
-        {/* Core Product Info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Product Name *
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Premium Soda Bottle"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Brand
-            </label>
-            <input
-              type="text"
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              placeholder="e.g. SonicBound"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Category
-            </label>
-            <input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="e.g. Beverages"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Market Routing SKU
-            </label>
-            <input
-              type="text"
-              value={marketSku}
-              onChange={(e) => setMarketSku(e.target.value)}
-              placeholder="e.g. MKT-COKE-99"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Global SKU Mapping */}
-        <div className="bg-slate-950/40 p-4 rounded-xl border border-white/5 space-y-3">
-          <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-            Regional Registry SKU Coordinates
-          </span>
-
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-[9px] text-slate-400 mb-0.5">Base Registry</label>
-              <input
-                type="text"
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                placeholder="SKU-BASE"
-                className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-2 py-1.5 text-white font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] text-slate-400 mb-0.5">US Variant</label>
-              <input
-                type="text"
-                value={skuUs}
-                onChange={(e) => setSkuUs(e.target.value)}
-                placeholder="SKU-US"
-                className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-2 py-1.5 text-white font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] text-slate-400 mb-0.5">CM Variant</label>
-              <input
-                type="text"
-                value={skuCm}
-                onChange={(e) => setSkuCm(e.target.value)}
-                placeholder="SKU-CM"
-                className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-2 py-1.5 text-white font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Description Field */}
-        <div>
-          <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-            Product Brief Description
-          </label>
-          <textarea
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Input summary parameters regarding placement or attributes..."
-            className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors resize-none"
-          />
-        </div>
-
-        {/* Physical Image Reference Linkage */}
-        <div className="border border-white/5 bg-slate-950/20 p-4 rounded-xl flex items-center justify-between gap-4">
-          <div>
-            <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-              Source Image Reference
-            </span>
-            {imageUrl ? (
-              <span className="text-xs text-emerald-400 font-mono break-all">{imageUrl.substring(0, 42)}...</span>
-            ) : (
-              <span className="text-xs text-slate-500">No media linked to record.</span>
-            )}
-          </div>
-
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            onChange={handleImageFileChange}
-            className="hidden"
-          />
-
-          <button
-            type="button"
-            disabled={uploadingImage}
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-[10px] font-bold uppercase tracking-wide rounded-lg border border-white/10 text-slate-200 transition-colors cursor-pointer shrink-0"
-          >
-            {uploadingImage ? "Uploading..." : "Attach File"}
-          </button>
-        </div>
-
-        {/* Action Triggers */}
-        <div className="flex gap-3 pt-3 border-t border-white/5">
-          <button
-            type="submit"
-            disabled={isCreating || uploadingImage}
-            className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl text-xs uppercase tracking-wide shadow-lg disabled:opacity-40 transition-all cursor-pointer"
-          >
-            {isCreating ? "Listing Asset..." : "Confirm Listing"}
-          </button>
-          
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2.5 bg-white/5 border border-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl text-xs font-semibold uppercase tracking-wide transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
     </div>
   );
 }

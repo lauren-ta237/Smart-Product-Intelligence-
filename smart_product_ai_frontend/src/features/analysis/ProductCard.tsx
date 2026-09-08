@@ -36,14 +36,8 @@ const getProductImageUrl = (product: DetectedProduct): string => {
 
 /**
  * Convert a normalized bounding box into an image crop style.
- *
- * For single-item uploads (where the bounding box tightly fits the solo object
- * rather than a split section of a multi-item shelf grid), we use `objectFit: "contain"`
- * so the full item is clearly visible. For multi-item shelf grids, we apply absolute positioning
- * to zoom in on the specific segment.
  */
 const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties => {
-  // If it's a standalone single-item upload, always fit the entire image cleanly.
   if (isSingleItem) {
     return {
       width: "100%",
@@ -62,9 +56,6 @@ const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties =
     };
   }
 
-  // ---------------------------------------------------------
-  // FORMAT 1: { x, y, width, height }
-  // ---------------------------------------------------------
   if (
     "x" in box &&
     "y" in box &&
@@ -105,62 +96,6 @@ const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties =
     }
   }
 
-  // ---------------------------------------------------------
-  // FORMAT 2: { xmin, ymin, xmax, ymax }
-  // ---------------------------------------------------------
-  if (
-    "xmin" in box &&
-    "ymin" in box &&
-    "xmax" in box &&
-    "ymax" in box
-  ) {
-    const xmin = Number(box.xmin);
-    const ymin = Number(box.ymin);
-    const xmax = Number(box.xmax);
-    const ymax = Number(box.ymax);
-
-    const width = xmax - xmin;
-    const height = ymax - ymin;
-
-    if (
-      Number.isFinite(xmin) &&
-      Number.isFinite(ymin) &&
-      Number.isFinite(xmax) &&
-      Number.isFinite(ymax) &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      width > 0 &&
-      height > 0
-    ) {
-      if (
-        xmin <= 0.05 &&
-        ymin <= 0.05 &&
-        xmax >= 0.98 &&
-        ymax >= 0.98
-      ) {
-        return {
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          position: "relative",
-        };
-      }
-
-      return {
-        position: "absolute",
-        maxWidth: "none",
-        maxHeight: "none",
-        width: `${100 / width}%`,
-        height: `${100 / height}%`,
-        left: `-${(xmin / width) * 100}%`,
-        top: `-${(ymin / height) * 100}%`,
-      };
-    }
-  }
-
-  // ---------------------------------------------------------
-  // FALLBACK
-  // ---------------------------------------------------------
   return {
     width: "100%",
     height: "100%",
@@ -184,7 +119,6 @@ export default function ProductCard({
   // Normalize the bounding box using the utility function.
   const box = normalizeBoundingBox(rawBox);
 
-  // Determine if this is a single item analysis context with a tight threshold
   const isSingleItem =
     (product as any).is_single_item === true ||
     (product as any).detection_type === "single" ||
@@ -227,12 +161,10 @@ export default function ProductCard({
 
     const delayDebounce = setTimeout(async () => {
       setIsSearching(true);
-
       try {
         const response = await api.get(
           `/products/search?q=${encodeURIComponent(name)}`
         );
-
         if (response.status >= 200 && response.status < 300) {
           const data = response.data;
           setSearchResults(Array.isArray(data) ? data : []);
@@ -247,26 +179,8 @@ export default function ProductCard({
     return () => clearTimeout(delayDebounce);
   }, [name, isEditing]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowDropdown(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
   const handleSave = () => {
     setIsEditing(false);
-
     if (onUpdate) {
       onUpdate({
         ...product,
@@ -298,7 +212,6 @@ export default function ProductCard({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* PRODUCT IMAGE */}
       <div className="relative h-44 w-full overflow-hidden bg-slate-900 rounded-2xl border border-white/5 flex items-center justify-center">
         {formattedImageUrl ? (
           <div className="relative w-full h-full overflow-hidden bg-slate-950 flex items-center justify-center">
@@ -312,10 +225,6 @@ export default function ProductCard({
               }
               style={getCroppedStyle(box, !!isSingleItem)}
               onError={(e) => {
-                console.error(
-                  "[BuyerCard Image Error] Formatted URL result:",
-                  formattedImageUrl
-                );
                 e.currentTarget.style.display = "none";
               }}
             />
@@ -327,7 +236,6 @@ export default function ProductCard({
         )}
       </div>
 
-      {/* PRODUCT INFORMATION */}
       <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl p-5 border border-white/5 shadow-xl">
         {isEditing ? (
           <div className="space-y-3 text-xs">
@@ -339,38 +247,44 @@ export default function ProductCard({
             />
 
             <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                step="any"
-                value={price}
-                onChange={(event) =>
-                  (event.target.value === "" ? 0 : Number(event.target.value))
-                }
-                className="bg-slate-950 p-2 rounded-xl text-emerald-400"
-              />
+              <div>
+                <label className="text-[9px] text-slate-500 uppercase font-bold px-1 mb-1 block">Price (FCFA)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={price}
+                  onChange={(event) =>
+                    setPrice(event.target.value === "" ? 0 : Number(event.target.value))
+                  }
+                  className="w-full bg-slate-950 border border-white/10 p-2 rounded-xl text-emerald-400 font-mono"
+                />
+              </div>
 
-              <input
-                type="number"
-                step="1"
-                value={stockQuantity}
-                onChange={(event) =>
-                  (event.target.value === "" ? 0 : Number(event.target.value))
-                }
-                className="bg-slate-950 p-2 rounded-xl text-white"
-              />
+              <div>
+                <label className="text-[9px] text-slate-500 uppercase font-bold px-1 mb-1 block">Quantity</label>
+                <input
+                  type="number"
+                  step="1"
+                  value={stockQuantity}
+                  onChange={(event) =>
+                    setStockQuantity(event.target.value === "" ? 0 : Number(event.target.value))
+                  }
+                  className="w-full bg-slate-950 border border-white/10 p-2 rounded-xl text-white font-mono"
+                />
+              </div>
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={handleSave}
-                className="flex-1 bg-emerald-500 text-slate-900 py-2 rounded-xl font-bold"
+                className="flex-1 bg-emerald-500 text-slate-900 py-2 rounded-xl font-bold cursor-pointer"
               >
                 Save
               </button>
 
               <button
                 onClick={handleCancel}
-                className="flex-1 bg-white/5 py-2 rounded-xl text-white"
+                className="flex-1 bg-white/5 py-2 rounded-xl text-white cursor-pointer"
               >
                 Cancel
               </button>
@@ -383,7 +297,7 @@ export default function ProductCard({
             </h2>
 
             <div className="flex justify-between items-center mt-2">
-              <span className="text-emerald-400 font-bold">
+              <span className="text-emerald-400 font-bold font-mono">
                 {Math.round(Number(price) || 0).toLocaleString()} FCFA
               </span>
 
@@ -394,9 +308,9 @@ export default function ProductCard({
 
             <button
               onClick={() => setIsEditing(true)}
-              className="w-full mt-4 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold"
+              className="w-full mt-4 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold cursor-pointer"
             >
-              Edit Product
+              Edit Details
             </button>
           </>
         )}

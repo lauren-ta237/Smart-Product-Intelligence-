@@ -224,21 +224,21 @@ class IntelligenceService:
             # =================================================
             db_vendor = vendor
             if isinstance(vendor, (str, UUID)):
-                from app.modules.vendors.models import Vendor
+                from app.modules.identity.models import User
                 vendor_query = await self.db.execute(
-                    select(Vendor).where(Vendor.id == vendor)
+                    select(User).where(User.id == vendor)
                 )
                 db_vendor = vendor_query.scalar_one_or_none()
 
             vendor_country = (
                 getattr(db_vendor, "country", None)
                 or context.get("country")
-                or "Global"
+                or "Cameroon"
             )
             vendor_city = (
                 getattr(db_vendor, "city", None)
                 or context.get("city")
-                or "Any City"
+                or "Yaounde"
             )
             vendor_lang = (
                 getattr(db_vendor, "preferred_language", None)
@@ -255,7 +255,10 @@ class IntelligenceService:
                 f"Each bounding box MUST contain "
                 f"x, y, width, and height. "
                 f"Extract visible text for SKU "
-                f"and estimated price."
+                f"and estimated price. "
+                f"IMPORTANT: Use Central African CFA franc (FCFA) magnitude. "
+                f"Retail prices should be in hundreds or thousands (e.g. 500, 1000). "
+                f"NEVER return values like 2, 3, or 5."
             )
 
             # =================================================
@@ -360,22 +363,31 @@ class IntelligenceService:
                     threshold=0.3,
                 )
 
+                # =================================================
+                # 🟢 SANITY GUARD (MAGNITUDE CORRECTION)
+                # =================================================
+                # If the price is extremely low (e.g. 2, 3, 5), the AI 
+                # returned a "Dollar-scale" value. We scale it by 
+                # ~600 to match the FCFA economy before saving.
+                # If it's already > 100, we assume it's already FCFA.
+                # =================================================
                 CURRENCY_MULTIPLIER = 600.0  
-                MINIMUM_VALID_PRICE = 100.0  
+                MINIMUM_REALISTIC_FCFA = 100.0  
 
+                if 0 < extracted_price < MINIMUM_REALISTIC_FCFA:
+                    price_to_store = extracted_price * CURRENCY_MULTIPLIER
+                else:
+                    price_to_store = extracted_price
+
+                # Prefer database value if found, otherwise use our sanity-checked AI price
                 if (
                     best_product
                     and best_product.price is not None
                     and float(best_product.price) > 0
                 ):
-                    base_price = float(best_product.price)
+                    final_price = float(best_product.price)
                 else:
-                    base_price = extracted_price
-
-                if 0 < base_price < MINIMUM_VALID_PRICE:
-                    final_price = base_price * CURRENCY_MULTIPLIER
-                else:
-                    final_price = base_price
+                    final_price = price_to_store
 
                 detected_product_id = uuid4()
                 cropped_image_url = None

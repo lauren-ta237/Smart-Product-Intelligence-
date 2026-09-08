@@ -25,7 +25,6 @@ export default function VendorOrders() {
   const [selectedOrder, setSelectedOrder] = useState<VendorOrder | null>(null);
   const [updating, setUpdating] = useState(false);
 
-  // Controlled inputs for the shipping assignment modal
   const [carrierInput, setCarrierInput] = useState("");
   const [trackingInput, setTrackingInput] = useState("");
 
@@ -44,7 +43,6 @@ export default function VendorOrders() {
     fetchOrders();
   }, []);
 
-  // Open modal and pre-fill fields if values exist
   const handleOpenShippingModal = (order: VendorOrder) => {
     setSelectedOrder(order);
     setCarrierInput(order.carrier || "");
@@ -62,9 +60,6 @@ export default function VendorOrders() {
       });
       fetchOrders();
       setSelectedOrder(null);
-      setCarrierInput("");
-      setTrackingInput("");
-      // Force an immediate refetch of the dashboard metrics query
       await queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "active" });
     } catch (err) {
       alert("Failed to update status.");
@@ -73,14 +68,13 @@ export default function VendorOrders() {
     }
   };
 
-  if (loading) return <div className="animate-pulse text-slate-500 text-xs">Syncing logs...</div>;
+  if (loading) return <div className="animate-pulse text-slate-500 text-xs uppercase font-black">Syncing ledger...</div>;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold tracking-tight">Order Fulfillment Ledger</h2>
+      <h2 className="text-2xl font-bold tracking-tight">Order Fulfillment Ledger (FCFA)</h2>
       <div className="grid grid-cols-1 gap-4">
         {orders.map(order => {
-          // Normalize to lowercase for reliable comparison with backend
           const currentStatus = order.status ? order.status.toLowerCase() : "";
 
           return (
@@ -92,7 +86,7 @@ export default function VendorOrders() {
                   <p className="text-xs text-slate-400">📍 {order.delivery_address}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-emerald-400 font-black text-xl">${order.total_price.toFixed(2)}</p>
+                  <p className="text-emerald-400 font-black text-xl">{Math.round(order.total_price).toLocaleString()} FCFA</p>
                   <span className="inline-block px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase">{order.status}</span>
                 </div>
               </div>
@@ -100,40 +94,40 @@ export default function VendorOrders() {
               <div className="space-y-2">
                 {order.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between text-xs text-slate-400">
-                    <span>{item.product_name} x{item.quantity}</span>
-                    <span className="font-mono">${(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="font-bold">{item.product_name} x{item.quantity}</span>
+                    <span className="font-mono">{Math.round(item.price * item.quantity).toLocaleString()} FCFA</span>
                   </div>
                 ))}
               </div>
 
               <div className="flex flex-wrap gap-2 pt-4">
                 {currentStatus === "pending" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "accepted")} className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "accepted")} className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Confirm Order
                   </button>
                 )}
                 {currentStatus === "accepted" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "preparing")} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "preparing")} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Start Preparation
                   </button>
                 )}
                 {currentStatus === "preparing" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "packed")} className="bg-amber-600 hover:bg-amber-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "packed")} className="bg-amber-600 hover:bg-amber-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Mark Packed
                   </button>
                 )}
                 {currentStatus === "packed" && (
-                  <button disabled={updating} onClick={() => handleOpenShippingModal(order)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => handleOpenShippingModal(order)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Assign Shipping
                   </button>
                 )}
                 {currentStatus === "shipped" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "out_for_delivery")} className="bg-teal-600 hover:bg-teal-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "out_for_delivery")} className="bg-teal-600 hover:bg-teal-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Out for Delivery
                   </button>
                 )}
                 {currentStatus === "out_for_delivery" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "delivered")} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "delivered")} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Confirm Delivery
                   </button>
                 )}
@@ -173,13 +167,13 @@ export default function VendorOrders() {
               <button 
                 disabled={updating}
                 onClick={() => updateStatus(selectedOrder.id, "shipped", trackingInput, carrierInput)} 
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold text-xs uppercase transition-all"
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
               >
                 {updating ? "Saving..." : "Ship Now"}
               </button>
               <button 
                 onClick={() => setSelectedOrder(null)} 
-                className="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-xl font-bold text-xs uppercase transition-all"
+                className="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
               >
                 Cancel
               </button>

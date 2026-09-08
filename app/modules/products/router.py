@@ -95,7 +95,7 @@ async def list_products(
     """
     Retrieves products.
 
-    Guests/buyers only receive approved products.
+    Guests/buyers receive all products (previously only approved).
     Vendors receive their own products.
     Admins can see all products.
     """
@@ -104,13 +104,15 @@ async def list_products(
 
     vendor_id, is_admin = extract_vendor_context(vendor)
 
-    # Guest / buyer
+    # Guest / buyer branch
     if not vendor_id:
+        # Changed: approved=approved instead of approved=True
+        # This allows buyers to see unapproved products by default.
         items, _ = await service.list_products(
             vendor_id=None,
             category=category,
             brand=brand,
-            approved=True,
+            approved=approved,
             search_query=q,
             page=page,
             size=size,

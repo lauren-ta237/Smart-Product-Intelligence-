@@ -2425,6 +2425,21 @@ async def init_db():
             "Ensuring users.google_id exists"
         )
 
+        # =====================================================================
+        # 🟢 MAGNITUDE SELF-HEALING: FIX EXISTING PRICES (2, 3, 5 FCFA)
+        # =====================================================================
+        # This fixes products like Mangoes and Limes that were already saved
+        # with USD-scale values in the main products table.
+        await _run_migration_step(
+            """
+            UPDATE products 
+            SET price = price * 600 
+            WHERE price > 0 AND price < 100;
+            """,
+            "Reparing existing USD-scale prices in products table (Self-Healing)"
+        )
+        # =====================================================================
+
         # Seed initial administrator account (admin@smartproduct.ai / AdminPass123!).
         print("[INIT_DB] Generating admin password hash...")
         from app.core.security import hash_password
@@ -2972,7 +2987,6 @@ from app.modules.admin.schemas import (
     APIKeyResponse, 
     PriceSuggestionRequest, 
     PriceSuggestionResponse,
-    # 🟢 New Admin Schemas
     AdminCreateRequest,
     AdminUpdateRequest,
     AdminPasswordResetRequest,
@@ -3069,13 +3083,14 @@ async def get_ai_pipeline_metrics(db: AsyncSession = Depends(get_db)):
 
 @router.post("/price-suggestion", response_model=PriceSuggestionResponse, dependencies=[Depends(verify_admin_role)])
 async def get_price_suggestion(payload: PriceSuggestionRequest, db: AsyncSession = Depends(get_db)):
-    """Suggest price parameters using historical sales averages and quality grade multipliers."""
+    """Suggest price parameters using historical sales averages in FCFA."""
     name_query = payload.product_name.strip()
     grade = payload.grade
 
-    base_min = 1.50
-    base_target = 2.49
-    base_max = 3.99
+    # 🟢 Updated base targets to FCFA (XAF)
+    base_min = 500.0
+    base_target = 1500.0
+    base_max = 5000.0
 
     try:
         stmt = select(func.avg(Product.price)).where(Product.name.ilike(f"%{name_query}%"))
@@ -3105,7 +3120,7 @@ async def get_price_suggestion(payload: PriceSuggestionRequest, db: AsyncSession
             min_price=min_price,
             target_price=target_price,
             max_price=max_price,
-            suggestion_reason=f"Calculated with grade '{grade}' multiplier ({grade_multiplier}x) based on database average matching '{name_query}'."
+            suggestion_reason=f"Calculated with grade '{grade}' multiplier ({grade_multiplier}x) based on database average matching '{name_query}' in FCFA."
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pricing calculation failed: {str(e)}")
@@ -3167,7 +3182,6 @@ async def moderate_product(
         raise HTTPException(status_code=500, detail=f"Moderation update failed: {str(e)}")
 
 
-# 🟢 Redesigned /admin/users search endpoint for API Key Owner Selection
 @router.get("/users", dependencies=[Depends(verify_admin_role)])
 async def list_eligible_users(
     q: Optional[str] = None,
@@ -3198,7 +3212,6 @@ async def list_eligible_users(
     } for u in users]
 
 
-# 🟢 ADMIN MANAGEMENT CRUD ENDPOINTS
 @router.get("/admins", response_model=List[AdminResponse], dependencies=[Depends(verify_admin_role)])
 async def list_admins(db: AsyncSession = Depends(get_db)):
     """Retrieve all administrative Superadmin users in the system."""
@@ -3468,8 +3481,6 @@ async def toggle_vendor_status(
         raise HTTPException(status_code=500, detail=f"Vendor status override failed: {str(e)}")
 
 
-# --- 🟢 GLOBAL AUDIT LOGS ENDPOINT ---
-
 @router.get("/audit-logs", dependencies=[Depends(verify_admin_role)])
 async def list_audit_logs(db: AsyncSession = Depends(get_db)):
     """Retrieve system security and administrative activity logs."""
@@ -3484,8 +3495,6 @@ async def list_audit_logs(db: AsyncSession = Depends(get_db)):
         "created_at": log.created_at
     } for log in logs]
 
-
-# --- 🟢 SYSTEM USER CONTROL ENDPOINTS ---
 
 @router.post("/users/{user_id}/promote", dependencies=[Depends(verify_admin_role)])
 async def promote_user_to_admin(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
@@ -6294,21 +6303,21 @@ class IntelligenceService:
             # =================================================
             db_vendor = vendor
             if isinstance(vendor, (str, UUID)):
-                from app.modules.vendors.models import Vendor
+                from app.modules.identity.models import User
                 vendor_query = await self.db.execute(
-                    select(Vendor).where(Vendor.id == vendor)
+                    select(User).where(User.id == vendor)
                 )
                 db_vendor = vendor_query.scalar_one_or_none()
 
             vendor_country = (
                 getattr(db_vendor, "country", None)
                 or context.get("country")
-                or "Global"
+                or "Cameroon"
             )
             vendor_city = (
                 getattr(db_vendor, "city", None)
                 or context.get("city")
-                or "Any City"
+                or "Yaounde"
             )
             vendor_lang = (
                 getattr(db_vendor, "preferred_language", None)
@@ -6325,7 +6334,10 @@ class IntelligenceService:
                 f"Each bounding box MUST contain "
                 f"x, y, width, and height. "
                 f"Extract visible text for SKU "
-                f"and estimated price."
+                f"and estimated price. "
+                f"IMPORTANT: Use Central African CFA franc (FCFA) magnitude. "
+                f"Retail prices should be in hundreds or thousands (e.g. 500, 1000). "
+                f"NEVER return values like 2, 3, or 5."
             )
 
             # =================================================
@@ -6430,22 +6442,31 @@ class IntelligenceService:
                     threshold=0.3,
                 )
 
+                # =================================================
+                # 🟢 SANITY GUARD (MAGNITUDE CORRECTION)
+                # =================================================
+                # If the price is extremely low (e.g. 2, 3, 5), the AI 
+                # returned a "Dollar-scale" value. We scale it by 
+                # ~600 to match the FCFA economy before saving.
+                # If it's already > 100, we assume it's already FCFA.
+                # =================================================
                 CURRENCY_MULTIPLIER = 600.0  
-                MINIMUM_VALID_PRICE = 100.0  
+                MINIMUM_REALISTIC_FCFA = 100.0  
 
+                if 0 < extracted_price < MINIMUM_REALISTIC_FCFA:
+                    price_to_store = extracted_price * CURRENCY_MULTIPLIER
+                else:
+                    price_to_store = extracted_price
+
+                # Prefer database value if found, otherwise use our sanity-checked AI price
                 if (
                     best_product
                     and best_product.price is not None
                     and float(best_product.price) > 0
                 ):
-                    base_price = float(best_product.price)
+                    final_price = float(best_product.price)
                 else:
-                    base_price = extracted_price
-
-                if 0 < base_price < MINIMUM_VALID_PRICE:
-                    final_price = base_price * CURRENCY_MULTIPLIER
-                else:
-                    final_price = base_price
+                    final_price = price_to_store
 
                 detected_product_id = uuid4()
                 cropped_image_url = None
@@ -6602,15 +6623,23 @@ class ProductDetectionPrompt:
 You are an expert retail product detection and pricing AI operating in local markets.
 Analyze the image and detect ALL products.
 For each product return:
-- product name (use realistic local naming conventions matching {vendor_location})
+- product_name (use realistic local naming conventions matching {vendor_location})
 - brand
 - category
 - description
 - possible SKU
 - confidence score
-- bounding box
-- price (estimated realistic market price in FCFA / CFA for {vendor_location}, e.g., standard retail pricing for local shops)
+- bounding_box
+- price (estimated realistic market price in FCFA / CFA for {vendor_location})
 - stock_quantity (default realistic stock number, e.g., 10)
+
+MARKET PRICING MAGNITUDE RULES:
+1. All prices MUST be in Central African CFA francs (FCFA).
+2. The numeric value for FCFA is much larger than USD. (e.g., 1 USD = 600 FCFA).
+3. NEVER return single-digit prices like 2, 3, or 5.
+4. For fresh produce like Mangoes, Citrus, or Plums, prices should be between 200 and 2000 FCFA depending on the item/quantity.
+5. For electronics or apparel, prices should be in the thousands (e.g., 5000, 15000, 50000).
+6. Minimum allowable price for any item is 100 FCFA.
 
 Market information:
 Country:
@@ -6623,9 +6652,8 @@ Vendor Location Context:
 Rules:
 1. Do not guess unknown products.
 2. Return multiple products.
-3. Prefer local market names and standard retail pricing in FCFA (Central African CFA franc). Do not use US Dollars or Euros.
+3. Use standard retail pricing in FCFA. Do not use US Dollars or Euros.
 4. Identify packaging variations.
-5. Ensure prices reflect actual local market value in FCFA (e.g., standard apparel or footwear should be priced normally in FCFA, avoiding extreme or hallucinated figures).
 Return valid JSON only.
 """
 
@@ -6851,11 +6879,11 @@ class ProductItem(BaseModel):
     confidence_score: float = Field(default=1.0, description="The confidence calculation score between 0.0 and 1.0.")
     estimated_price: float = Field(
         default=0.0,
-        description="Estimated market retail price or global MSRP in target market currency (or USD if unknown). MUST NOT be 0.0 if item is identified."
+        description="Estimated market retail price in Central African CFA franc (FCFA/XAF). MUST NOT be 0.0 if item is identified."
     )
     currency: str = Field(
-        default="USD",
-        description="3-letter ISO currency code for estimated price (e.g., USD, EUR, XAF)."
+        default="XAF",
+        description="3-letter ISO currency code for estimated price (XAF)."
     )
     bounding_box: BoundingBoxCoordinate = Field(description="Normalized coordinates tracking object bounding wrapper.")
 
@@ -6870,11 +6898,17 @@ class ProductDetectionPrompt:
     """
     def build(self, country: str, language: str) -> str:
         return f"""
-    You are a strict retail audit AI. Analyze the image and ONLY return products you actually see. 
-    - If you see vegetables, name them as vegetables (e.g., 'Red Bell Pepper'). 
-    - NEVER return names like 'iPhone', 'Laptop', or 'Smartwatch' unless they are physically in the image.
+    You are a strict retail audit AI specialized in the Cameroonian market.
+    Analyze the image and ONLY return products you actually see. 
     - Return coordinates in normalized decimals (0.0 to 1.0).
     - Format: [ymin, xmin, ymax, xmax].
+    
+    PRICING RULES (FCFA):
+    - All prices MUST be in FCFA (XAF).
+    - NEVER return small numbers like 1, 2, 5, or 10.
+    - Standard produce (fruits/veg) prices are usually 200, 500, or 1000 FCFA.
+    - Apparel/Shoes are usually 5000, 10000, or 25000 FCFA.
+    - If you think an item costs 2 Dollars, you MUST return 1200 FCFA.
     """
 
 
@@ -6906,15 +6940,15 @@ class GeminiVisionProvider:
         self.model_name = "gemini-3.6-flash"
 
     async def analyze_image(self, image_url: str, context: dict) -> dict:
-        country = context.get("country", "US")
-        language = context.get("language", "en-US")
+        country = context.get("country", "Cameroon")
+        language = context.get("language", "en")
 
         default_prompt = ProductDetectionPrompt().build(country=country, language=language)
         user_prompt = context.get("prompt")
 
         # 🟢 Enforce pricing rules even when context['prompt'] overrides the default prompt
         if user_prompt:
-            prompt = f"{user_prompt}\n\nIMPORTANT INSTRUCTION: You MUST estimate a non-zero retail market price ('estimated_price') and provide the 3-letter currency code ('currency') for all detected commercial products. Do NOT leave estimated_price as 0.0."
+            prompt = f"{user_prompt}\n\nIMPORTANT PRICING MAGNITUDE INSTRUCTION: Prices MUST be in FCFA. NEVER use single digits like 2 or 5. 1 USD = 600 FCFA. Return realistic Cameroonian prices (e.g., 500, 1500, 2000)."
         else:
             prompt = default_prompt
         
@@ -6971,8 +7005,8 @@ class GeminiVisionProvider:
 
                     current_price = prod.get("estimated_price")
                     if current_price is None or float(current_price) == 0.0:
-                        prod["estimated_price"] = 14.99  # Fallback market estimation
-                        prod["currency"] = prod.get("currency") or "USD"
+                        prod["estimated_price"] = 1500.0  # Fallback market estimation
+                        prod["currency"] = "XAF"
                     
                     # Provide 'price' key alias so callers relying on 'price' receive it directly
                     prod["price"] = prod["estimated_price"]
@@ -8436,7 +8470,9 @@ class ProductCRUDService:
         self.db = db
 
     async def create_product(self, data: ProductCreate, vendor_id: UUID) -> Product:
-        # If an image_id relation is provided, confirm possession and resolve absolute path URL
+        # Resolve the storage path from the image_id if provided or missing from image_url
+        final_image_url = data.image_url
+        
         if data.image_id:
             img_result = await self.db.execute(
                 select(ProductImage).where(
@@ -8447,8 +8483,16 @@ class ProductCRUDService:
                 )
             )
             image_record = img_result.scalar_one_or_none()
-            if image_record and not data.image_url:
-                data.image_url = image_record.storage_url
+            
+            # Ensure the product's image_url column is populated from the media record
+            if image_record:
+                if not final_image_url or final_image_url == "undefined" or final_image_url == "null":
+                    final_image_url = image_record.storage_url
+
+        # Magnitude Guard: Fix tiny manual prices (e.g. 2 -> 1200)
+        final_price = data.price if data.price is not None else 0.0
+        if 0 < final_price < 100:
+            final_price = final_price * 600.0
 
         product = Product(
             vendor_id=vendor_id,
@@ -8460,13 +8504,13 @@ class ProductCRUDService:
             sku_us=data.sku_us,
             sku_cm=data.sku_cm,
             market_sku=data.market_sku,
-            image_url=data.image_url,
+            image_url=final_image_url,
             image_id=data.image_id,
             bounding_box=data.bounding_box,
             approved=data.approved,
 
             # transactional extensions
-            price=data.price,
+            price=final_price,
             stock_quantity=data.stock_quantity,
             location=data.location
         )
@@ -8488,42 +8532,37 @@ class ProductCRUDService:
         try:
             for item in items:
                 async with self.db.begin_nested():
-                    # STEP 2.1: Clean the image path to store a relative URL
                     raw_url = item.get("image_url", "") 
                     temp_path = raw_url.split("localhost:8000/")[-1] if "localhost:8000" in raw_url else raw_url
                     clean_path = temp_path.replace("\\", "/")
                     
-                    # Ensure strictly valid numbers & sanitize AI pricing anomalies in CFA
                     try:
                         raw_price = float(item.get("price", 0.0))
                     except (ValueError, TypeError):
-                        raw_price = 15000.0  # Realistic default fallback in CFA (e.g. 15,000 CFA)
+                        raw_price = 1500.0
+
+                    if 0 < raw_price < 100:
+                        price = raw_price * 600.0
+                    else:
+                        price = raw_price
 
                     item_name = item.get("name", "Scanned Product")
                     lower_name = item_name.lower()
 
-                    # Guardrail: Enforce realistic local market pricing in CFA for footwear and general goods
                     footwear_keywords = ["shoe", "sneaker", "boot", "sandal", "gazelle", "boston", "kayano", "salomon", "spezial", "1906"]
                     
                     if any(kw in lower_name for kw in footwear_keywords):
-                        # If AI hallucinates per-kg pricing or extreme dollar conversions (> 250,000 CFA per pair)
-                        if raw_price > 250000 or raw_price < 5000:
-                            price = 35000.0  # Standard local market price for quality sneakers/shoes in CFA
-                        else:
-                            price = raw_price
+                        if price > 250000 or price < 5000:
+                            price = 35000.0
                     else:
-                        # General items local pricing check
-                        if raw_price > 500000:
+                        if price > 500000:
                             price = 10000.0
-                        else:
-                            price = raw_price
 
                     try:
                         stock = int(item.get("stock_quantity", 10))
                     except (ValueError, TypeError):
                         stock = 10
 
-                    # Handle category & description sanity
                     category = item.get("category", "General")
                     if any(kw in lower_name for kw in footwear_keywords):
                         category = "Footwear"
@@ -8537,7 +8576,7 @@ class ProductCRUDService:
                         existing.bounding_box = item.get("bounding_box")
                         existing.price = price
                         existing.category = category
-                        existing.approved = True # STEP 2.2: Force visibility for buyers
+                        existing.approved = True
                         saved_products.append(existing)
                     else:
                         new_product = Product(
@@ -8546,7 +8585,7 @@ class ProductCRUDService:
                             name=item_name,
                             image_url=clean_path,
                             bounding_box=item.get("bounding_box"),
-                            approved=True, # STEP 2.2: Ensure new products show up for buyers
+                            approved=True, 
                             price=price,
                             stock_quantity=stock,
                             category=category,
@@ -8571,7 +8610,6 @@ class ProductCRUDService:
         if not product:
             return None
 
-        # Scope restriction access gates
         if not is_admin and product.vendor_id != vendor_id:
             raise ValueError("You do not have permission to modify this product.")
 
@@ -8589,6 +8627,11 @@ class ProductCRUDService:
                 product.image_url = image_record.storage_url
 
         update_dict = data.model_dump(exclude_unset=True)
+        
+        if "price" in update_dict and update_dict["price"] is not None:
+            if 0 < update_dict["price"] < 100:
+                update_dict["price"] = update_dict["price"] * 600.0
+
         for key, value in update_dict.items():
             setattr(product, key, value)
 
@@ -10278,13 +10321,13 @@ export default function BuyerOrders() {
             <div>
               <h1 className="text-3xl font-bold">Track Orders</h1>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
-                Order Fulfillment & Shipment Management
+                Order Fulfillment Management (FCFA)
               </p>
             </div>
 
             <button
               onClick={() => navigate("/")}
-              className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10"
+              className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10 cursor-pointer"
             >
               Back to Dashboard
             </button>
@@ -10300,7 +10343,7 @@ export default function BuyerOrders() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500 text-xs font-bold uppercase">
         Syncing Tracking Ledger...
       </div>
     );
@@ -10313,13 +10356,13 @@ export default function BuyerOrders() {
           <div>
             <h1 className="text-3xl font-bold">Shipment Tracking</h1>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
-              Real-time Fulfillment Updates
+              Real-time Settlement Updates (FCFA)
             </p>
           </div>
 
           <button
             onClick={() => navigate("/")}
-            className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10"
+            className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10 cursor-pointer"
           >
             Back to Market
           </button>
@@ -10327,8 +10370,8 @@ export default function BuyerOrders() {
 
         <div className="space-y-8">
           {orders.length === 0 ? (
-            <p className="text-center py-20 text-slate-600">
-              No shipments found.
+            <p className="text-center py-20 text-slate-600 text-xs font-bold">
+              No shipments found in ledger.
             </p>
           ) : (
             orders.map((order) => (
@@ -10342,12 +10385,11 @@ export default function BuyerOrders() {
                   </span>
 
                   <span className="text-emerald-400 font-black text-lg">
-                    ${order.total_price.toFixed(2)}
+                    {Math.round(order.total_price).toLocaleString()} FCFA
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Tracking Status */}
                   <div className="space-y-4">
                     <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
                       Tracking Status
@@ -10393,38 +10435,19 @@ export default function BuyerOrders() {
                     </div>
                   </div>
 
-                  {/* Logistics + Manifest */}
                   <div className="space-y-6">
                     <div className="bg-slate-950 p-6 rounded-2xl border border-white/5 space-y-4">
                       <h4 className="text-[10px] font-black uppercase text-slate-500">
                         Logistics Info
                       </h4>
 
-                      <div className="space-y-2">
-                        <p className="text-xs">
-                          Carrier:{" "}
-                          <span className="text-slate-200 font-bold">
-                            {order.carrier || "Pending Assignment"}
-                          </span>
-                        </p>
-
-                        <p className="text-xs">
-                          Tracking:{" "}
-                          <span className="text-slate-200 font-mono font-bold">
-                            {order.tracking_number || "Awaiting Dispatch"}
-                          </span>
-                        </p>
-
-                        <p className="text-xs">
-                          Est. Delivery:{" "}
-                          <span className="text-slate-200 font-bold">
-                            {order.estimated_delivery || "Not available"}
-                          </span>
-                        </p>
+                      <div className="space-y-2 text-xs">
+                        <p>Carrier: <span className="text-slate-200 font-bold">{order.carrier || "Standard Dispatch"}</span></p>
+                        <p>Tracking: <span className="text-slate-200 font-mono font-bold">{order.tracking_number || "Awaiting Update"}</span></p>
+                        <p>Est. Delivery: <span className="text-slate-200 font-bold">{order.estimated_delivery || "Processing"}</span></p>
                       </div>
                     </div>
 
-                    {/* Manifest */}
                     <div className="space-y-3">
                       <h4 className="text-[10px] font-black uppercase text-slate-500">
                         Manifest
@@ -10436,19 +10459,14 @@ export default function BuyerOrders() {
                             key={idx}
                             className="flex justify-between text-xs font-bold text-slate-300"
                           >
-                            <span>
-                              {i.product_name} x{i.quantity}
-                            </span>
-
-                            <span className="font-mono">
-                              ${(i.price * i.quantity).toFixed(2)}
+                            <span>{i.product_name} x{i.quantity}</span>
+                            <span className="font-mono text-slate-400">
+                              {Math.round(i.price * i.quantity).toLocaleString()} FCFA
                             </span>
                           </div>
                         ))
                       ) : (
-                        <p className="text-[10px] text-slate-600 italic">
-                          No items listed in manifest.
-                        </p>
+                        <p className="text-[10px] text-slate-600 italic">No items.</p>
                       )}
                     </div>
                   </div>
@@ -11743,7 +11761,7 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
 
 ========================= FILE START: ./smart_product_ai_frontend/src/components/products/ProductCreateForm.tsx =========================
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useProducts } from "../../hooks/useProducts";
 import { uploadImage } from "../../api/images";
 
@@ -11759,34 +11777,52 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
   // Form Field States
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState("General");
   const [description, setDescription] = useState("");
-  const [sku, setSku] = useState("");
-  const [skuUs, setSkuUs] = useState("");
-  const [skuCm, setSkuCm] = useState("");
-  const [marketSku, setMarketSku] = useState("");
+  const [price, setPrice] = useState<number | "">("");
+  const [stock, setStock] = useState<number>(1);
   
   // Media Reference States
   const [imageId, setImageId] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState("");
+  const [serverImageUrl, setServerImageUrl] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Handles async file attachment and maps references
+  // Clean up object URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Handles immediate local preview and async server upload
   const handleImageFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // 1. Immediate Local Preview for the UI
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const localBlob = URL.createObjectURL(file);
+    setPreviewUrl(localBlob);
+
+    // 2. Upload to existing media infrastructure
     setUploadingImage(true);
     setErrorMsg(null);
 
     try {
       const response = await uploadImage(file);
-      setImageId(response.id);
-      setImageUrl(response.url);
+      // Corrected: Backend returns storage_url, not url
+      if (response && response.id) {
+        setImageId(response.id);
+        setServerImageUrl(response.storage_url);
+      }
     } catch (err: any) {
-      setErrorMsg("Failed to upload media asset reference. Try again.");
-      console.error(err);
+      setErrorMsg("Failed to upload media asset. Please try another file.");
+      setPreviewUrl(null); 
+      console.error("[Manual Upload Failure]", err);
     } finally {
       setUploadingImage(false);
     }
@@ -11794,214 +11830,221 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setErrorMsg("Product Name is required.");
+    
+    if (!name.trim() || price === "" || price <= 0) {
+      setErrorMsg("Please provide a valid product name and price.");
+      return;
+    }
+
+    if (!imageId) {
+      setErrorMsg("Please upload a product image first.");
       return;
     }
 
     setErrorMsg(null);
 
     try {
-      await createProduct({
-        name,
+      const payload = {
+        name: name.trim(),
         brand: brand.trim() || undefined,
         category: category.trim() || undefined,
         description: description.trim() || undefined,
-        sku: sku.trim() || undefined,
-        sku_us: skuUs.trim() || undefined,
-        sku_cm: skuCm.trim() || undefined,
-        market_sku: marketSku.trim() || undefined,
-        image_url: imageUrl || undefined,
-        image_id: imageId || undefined,
-        approved: false
-      });
+        price: Number(price),
+        stock_quantity: Number(stock),
+        image_id: imageId,
+        image_url: serverImageUrl || undefined,
+        approved: false 
+      };
 
+      console.log("[ProductCreate] Submitting manual payload:", payload);
+
+      await createProduct(payload);
+
+      // Reset form on success
+      setName("");
+      setPrice("");
+      setBrand("");
+      setDescription("");
+      setImageId(null);
+      setServerImageUrl("");
+      setPreviewUrl(null);
+      
       if (onSuccess) {
         onSuccess();
       }
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.detail || "Could not save catalog entry.");
+      setErrorMsg(err.response?.data?.detail || "Could not save manual catalog entry.");
     }
   };
 
   return (
-    <div className="bg-slate-900/90 border border-white/10 rounded-3xl p-6 shadow-2xl max-w-2xl w-full text-slate-200">
-      <div className="border-b border-white/5 pb-4 mb-6">
-        <h2 className="text-2xl font-bold tracking-tight text-white">List Manual Product</h2>
-        <p className="text-xs text-slate-400 mt-1">
-          Create standard catalog entries with linked local file storage attachments.
-        </p>
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl text-slate-200">
+        <div className="border-b border-white/10 pb-4 mb-6">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <span>📝</span> Manual Product Entry
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Fill in the details below. Images are stored privately until approved.
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 text-xs flex items-center gap-2">
+            <span>⚠️</span> {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleFormSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            
+            {/* Visual Column */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Product Image *
+                </label>
+                <div 
+                  onClick={() => !uploadingImage && fileInputRef.current?.click()}
+                  className={`relative h-64 w-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all duration-200 overflow-hidden ${
+                    previewUrl ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-white/10 bg-slate-950/50 hover:bg-white/[0.02]'
+                  } ${uploadingImage ? 'opacity-50 cursor-wait' : ''}`}
+                >
+                  {previewUrl ? (
+                    <>
+                      <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <span className="bg-slate-900/90 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Change Photo</span>
+                      </div>
+                      {uploadingImage && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mb-2"></div>
+                          <span className="text-[9px] font-black uppercase">Syncing...</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-3xl mb-2">{uploadingImage ? '⏳' : '📷'}</span>
+                      <span className="text-[10px] font-bold uppercase text-slate-400">
+                        {uploadingImage ? 'Uploading...' : 'Click to Upload Image'}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleImageFileChange}
+                  className="hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Description
+                </label>
+                <textarea
+                  rows={4}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50 resize-none transition-all"
+                  placeholder="e.g. Hand made and available in any quantity..."
+                />
+              </div>
+            </div>
+
+            {/* Attributes Column */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Product Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. man made basket"
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-bold focus:outline-none focus:border-indigo-500/50 transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                    Price (FCFA) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="4000"
+                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-emerald-400 font-mono text-sm font-bold focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                    Stock Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={stock}
+                    onChange={(e) => setStock(Number(e.target.value))}
+                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  Brand (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  placeholder="e.g. Local Craft"
+                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-4 pt-6 border-t border-white/10">
+            <button
+              type="submit"
+              disabled={isCreating || uploadingImage}
+              className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-900/20 cursor-pointer"
+            >
+              {isCreating ? "Finalizing Listing..." : "Confirm Listing"}
+            </button>
+            
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 font-bold rounded-2xl text-xs uppercase tracking-widest transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
-
-      {errorMsg && (
-        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs">
-          ⚠️ {errorMsg}
-        </div>
-      )}
-
-      <form onSubmit={handleFormSubmit} className="space-y-4">
-        {/* Core Product Info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Product Name *
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Premium Soda Bottle"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Brand
-            </label>
-            <input
-              type="text"
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              placeholder="e.g. SonicBound"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Category
-            </label>
-            <input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="e.g. Beverages"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-              Market Routing SKU
-            </label>
-            <input
-              type="text"
-              value={marketSku}
-              onChange={(e) => setMarketSku(e.target.value)}
-              placeholder="e.g. MKT-COKE-99"
-              className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Global SKU Mapping */}
-        <div className="bg-slate-950/40 p-4 rounded-xl border border-white/5 space-y-3">
-          <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-            Regional Registry SKU Coordinates
-          </span>
-
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-[9px] text-slate-400 mb-0.5">Base Registry</label>
-              <input
-                type="text"
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                placeholder="SKU-BASE"
-                className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-2 py-1.5 text-white font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] text-slate-400 mb-0.5">US Variant</label>
-              <input
-                type="text"
-                value={skuUs}
-                onChange={(e) => setSkuUs(e.target.value)}
-                placeholder="SKU-US"
-                className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-2 py-1.5 text-white font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] text-slate-400 mb-0.5">CM Variant</label>
-              <input
-                type="text"
-                value={skuCm}
-                onChange={(e) => setSkuCm(e.target.value)}
-                placeholder="SKU-CM"
-                className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-2 py-1.5 text-white font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Description Field */}
-        <div>
-          <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-            Product Brief Description
-          </label>
-          <textarea
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Input summary parameters regarding placement or attributes..."
-            className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500/50 transition-colors resize-none"
-          />
-        </div>
-
-        {/* Physical Image Reference Linkage */}
-        <div className="border border-white/5 bg-slate-950/20 p-4 rounded-xl flex items-center justify-between gap-4">
-          <div>
-            <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-              Source Image Reference
-            </span>
-            {imageUrl ? (
-              <span className="text-xs text-emerald-400 font-mono break-all">{imageUrl.substring(0, 42)}...</span>
-            ) : (
-              <span className="text-xs text-slate-500">No media linked to record.</span>
-            )}
-          </div>
-
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            onChange={handleImageFileChange}
-            className="hidden"
-          />
-
-          <button
-            type="button"
-            disabled={uploadingImage}
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-[10px] font-bold uppercase tracking-wide rounded-lg border border-white/10 text-slate-200 transition-colors cursor-pointer shrink-0"
-          >
-            {uploadingImage ? "Uploading..." : "Attach File"}
-          </button>
-        </div>
-
-        {/* Action Triggers */}
-        <div className="flex gap-3 pt-3 border-t border-white/5">
-          <button
-            type="submit"
-            disabled={isCreating || uploadingImage}
-            className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl text-xs uppercase tracking-wide shadow-lg disabled:opacity-40 transition-all cursor-pointer"
-          >
-            {isCreating ? "Listing Asset..." : "Confirm Listing"}
-          </button>
-          
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2.5 bg-white/5 border border-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl text-xs font-semibold uppercase tracking-wide transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
@@ -12098,7 +12141,6 @@ export default function VendorOrders() {
   const [selectedOrder, setSelectedOrder] = useState<VendorOrder | null>(null);
   const [updating, setUpdating] = useState(false);
 
-  // Controlled inputs for the shipping assignment modal
   const [carrierInput, setCarrierInput] = useState("");
   const [trackingInput, setTrackingInput] = useState("");
 
@@ -12117,7 +12159,6 @@ export default function VendorOrders() {
     fetchOrders();
   }, []);
 
-  // Open modal and pre-fill fields if values exist
   const handleOpenShippingModal = (order: VendorOrder) => {
     setSelectedOrder(order);
     setCarrierInput(order.carrier || "");
@@ -12135,9 +12176,6 @@ export default function VendorOrders() {
       });
       fetchOrders();
       setSelectedOrder(null);
-      setCarrierInput("");
-      setTrackingInput("");
-      // Force an immediate refetch of the dashboard metrics query
       await queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "active" });
     } catch (err) {
       alert("Failed to update status.");
@@ -12146,14 +12184,13 @@ export default function VendorOrders() {
     }
   };
 
-  if (loading) return <div className="animate-pulse text-slate-500 text-xs">Syncing logs...</div>;
+  if (loading) return <div className="animate-pulse text-slate-500 text-xs uppercase font-black">Syncing ledger...</div>;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold tracking-tight">Order Fulfillment Ledger</h2>
+      <h2 className="text-2xl font-bold tracking-tight">Order Fulfillment Ledger (FCFA)</h2>
       <div className="grid grid-cols-1 gap-4">
         {orders.map(order => {
-          // Normalize to lowercase for reliable comparison with backend
           const currentStatus = order.status ? order.status.toLowerCase() : "";
 
           return (
@@ -12165,7 +12202,7 @@ export default function VendorOrders() {
                   <p className="text-xs text-slate-400">📍 {order.delivery_address}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-emerald-400 font-black text-xl">${order.total_price.toFixed(2)}</p>
+                  <p className="text-emerald-400 font-black text-xl">{Math.round(order.total_price).toLocaleString()} FCFA</p>
                   <span className="inline-block px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase">{order.status}</span>
                 </div>
               </div>
@@ -12173,40 +12210,40 @@ export default function VendorOrders() {
               <div className="space-y-2">
                 {order.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between text-xs text-slate-400">
-                    <span>{item.product_name} x{item.quantity}</span>
-                    <span className="font-mono">${(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="font-bold">{item.product_name} x{item.quantity}</span>
+                    <span className="font-mono">{Math.round(item.price * item.quantity).toLocaleString()} FCFA</span>
                   </div>
                 ))}
               </div>
 
               <div className="flex flex-wrap gap-2 pt-4">
                 {currentStatus === "pending" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "accepted")} className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "accepted")} className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Confirm Order
                   </button>
                 )}
                 {currentStatus === "accepted" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "preparing")} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "preparing")} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Start Preparation
                   </button>
                 )}
                 {currentStatus === "preparing" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "packed")} className="bg-amber-600 hover:bg-amber-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "packed")} className="bg-amber-600 hover:bg-amber-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Mark Packed
                   </button>
                 )}
                 {currentStatus === "packed" && (
-                  <button disabled={updating} onClick={() => handleOpenShippingModal(order)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => handleOpenShippingModal(order)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Assign Shipping
                   </button>
                 )}
                 {currentStatus === "shipped" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "out_for_delivery")} className="bg-teal-600 hover:bg-teal-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "out_for_delivery")} className="bg-teal-600 hover:bg-teal-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Out for Delivery
                   </button>
                 )}
                 {currentStatus === "out_for_delivery" && (
-                  <button disabled={updating} onClick={() => updateStatus(order.id, "delivered")} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                  <button disabled={updating} onClick={() => updateStatus(order.id, "delivered")} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Confirm Delivery
                   </button>
                 )}
@@ -12246,13 +12283,13 @@ export default function VendorOrders() {
               <button 
                 disabled={updating}
                 onClick={() => updateStatus(selectedOrder.id, "shipped", trackingInput, carrierInput)} 
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold text-xs uppercase transition-all"
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
               >
                 {updating ? "Saving..." : "Ship Now"}
               </button>
               <button 
                 onClick={() => setSelectedOrder(null)} 
-                className="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-xl font-bold text-xs uppercase transition-all"
+                className="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -12894,14 +12931,8 @@ const getProductImageUrl = (product: DetectedProduct): string => {
 
 /**
  * Convert a normalized bounding box into an image crop style.
- *
- * For single-item uploads (where the bounding box tightly fits the solo object
- * rather than a split section of a multi-item shelf grid), we use `objectFit: "contain"`
- * so the full item is clearly visible. For multi-item shelf grids, we apply absolute positioning
- * to zoom in on the specific segment.
  */
 const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties => {
-  // If it's a standalone single-item upload, always fit the entire image cleanly.
   if (isSingleItem) {
     return {
       width: "100%",
@@ -12920,9 +12951,6 @@ const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties =
     };
   }
 
-  // ---------------------------------------------------------
-  // FORMAT 1: { x, y, width, height }
-  // ---------------------------------------------------------
   if (
     "x" in box &&
     "y" in box &&
@@ -12963,62 +12991,6 @@ const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties =
     }
   }
 
-  // ---------------------------------------------------------
-  // FORMAT 2: { xmin, ymin, xmax, ymax }
-  // ---------------------------------------------------------
-  if (
-    "xmin" in box &&
-    "ymin" in box &&
-    "xmax" in box &&
-    "ymax" in box
-  ) {
-    const xmin = Number(box.xmin);
-    const ymin = Number(box.ymin);
-    const xmax = Number(box.xmax);
-    const ymax = Number(box.ymax);
-
-    const width = xmax - xmin;
-    const height = ymax - ymin;
-
-    if (
-      Number.isFinite(xmin) &&
-      Number.isFinite(ymin) &&
-      Number.isFinite(xmax) &&
-      Number.isFinite(ymax) &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      width > 0 &&
-      height > 0
-    ) {
-      if (
-        xmin <= 0.05 &&
-        ymin <= 0.05 &&
-        xmax >= 0.98 &&
-        ymax >= 0.98
-      ) {
-        return {
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          position: "relative",
-        };
-      }
-
-      return {
-        position: "absolute",
-        maxWidth: "none",
-        maxHeight: "none",
-        width: `${100 / width}%`,
-        height: `${100 / height}%`,
-        left: `-${(xmin / width) * 100}%`,
-        top: `-${(ymin / height) * 100}%`,
-      };
-    }
-  }
-
-  // ---------------------------------------------------------
-  // FALLBACK
-  // ---------------------------------------------------------
   return {
     width: "100%",
     height: "100%",
@@ -13042,7 +13014,6 @@ export default function ProductCard({
   // Normalize the bounding box using the utility function.
   const box = normalizeBoundingBox(rawBox);
 
-  // Determine if this is a single item analysis context with a tight threshold
   const isSingleItem =
     (product as any).is_single_item === true ||
     (product as any).detection_type === "single" ||
@@ -13085,12 +13056,10 @@ export default function ProductCard({
 
     const delayDebounce = setTimeout(async () => {
       setIsSearching(true);
-
       try {
         const response = await api.get(
           `/products/search?q=${encodeURIComponent(name)}`
         );
-
         if (response.status >= 200 && response.status < 300) {
           const data = response.data;
           setSearchResults(Array.isArray(data) ? data : []);
@@ -13105,26 +13074,8 @@ export default function ProductCard({
     return () => clearTimeout(delayDebounce);
   }, [name, isEditing]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowDropdown(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
   const handleSave = () => {
     setIsEditing(false);
-
     if (onUpdate) {
       onUpdate({
         ...product,
@@ -13156,7 +13107,6 @@ export default function ProductCard({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* PRODUCT IMAGE */}
       <div className="relative h-44 w-full overflow-hidden bg-slate-900 rounded-2xl border border-white/5 flex items-center justify-center">
         {formattedImageUrl ? (
           <div className="relative w-full h-full overflow-hidden bg-slate-950 flex items-center justify-center">
@@ -13170,10 +13120,6 @@ export default function ProductCard({
               }
               style={getCroppedStyle(box, !!isSingleItem)}
               onError={(e) => {
-                console.error(
-                  "[BuyerCard Image Error] Formatted URL result:",
-                  formattedImageUrl
-                );
                 e.currentTarget.style.display = "none";
               }}
             />
@@ -13185,7 +13131,6 @@ export default function ProductCard({
         )}
       </div>
 
-      {/* PRODUCT INFORMATION */}
       <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl p-5 border border-white/5 shadow-xl">
         {isEditing ? (
           <div className="space-y-3 text-xs">
@@ -13197,38 +13142,44 @@ export default function ProductCard({
             />
 
             <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                step="any"
-                value={price}
-                onChange={(event) =>
-                  (event.target.value === "" ? 0 : Number(event.target.value))
-                }
-                className="bg-slate-950 p-2 rounded-xl text-emerald-400"
-              />
+              <div>
+                <label className="text-[9px] text-slate-500 uppercase font-bold px-1 mb-1 block">Price (FCFA)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={price}
+                  onChange={(event) =>
+                    setPrice(event.target.value === "" ? 0 : Number(event.target.value))
+                  }
+                  className="w-full bg-slate-950 border border-white/10 p-2 rounded-xl text-emerald-400 font-mono"
+                />
+              </div>
 
-              <input
-                type="number"
-                step="1"
-                value={stockQuantity}
-                onChange={(event) =>
-                  (event.target.value === "" ? 0 : Number(event.target.value))
-                }
-                className="bg-slate-950 p-2 rounded-xl text-white"
-              />
+              <div>
+                <label className="text-[9px] text-slate-500 uppercase font-bold px-1 mb-1 block">Quantity</label>
+                <input
+                  type="number"
+                  step="1"
+                  value={stockQuantity}
+                  onChange={(event) =>
+                    setStockQuantity(event.target.value === "" ? 0 : Number(event.target.value))
+                  }
+                  className="w-full bg-slate-950 border border-white/10 p-2 rounded-xl text-white font-mono"
+                />
+              </div>
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={handleSave}
-                className="flex-1 bg-emerald-500 text-slate-900 py-2 rounded-xl font-bold"
+                className="flex-1 bg-emerald-500 text-slate-900 py-2 rounded-xl font-bold cursor-pointer"
               >
                 Save
               </button>
 
               <button
                 onClick={handleCancel}
-                className="flex-1 bg-white/5 py-2 rounded-xl text-white"
+                className="flex-1 bg-white/5 py-2 rounded-xl text-white cursor-pointer"
               >
                 Cancel
               </button>
@@ -13241,7 +13192,7 @@ export default function ProductCard({
             </h2>
 
             <div className="flex justify-between items-center mt-2">
-              <span className="text-emerald-400 font-bold">
+              <span className="text-emerald-400 font-bold font-mono">
                 {Math.round(Number(price) || 0).toLocaleString()} FCFA
               </span>
 
@@ -13252,9 +13203,9 @@ export default function ProductCard({
 
             <button
               onClick={() => setIsEditing(true)}
-              className="w-full mt-4 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold"
+              className="w-full mt-4 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold cursor-pointer"
             >
-              Edit Product
+              Edit Details
             </button>
           </>
         )}
@@ -13968,22 +13919,21 @@ import { getDashboardStats } from "../api/dashboard";
 import { useAuth } from "../store/auth";
 
 /*
-  React Query handles:
-  - loading
-  - caching
-  - refetching
+  React Query hook for dashboard statistics.
+  Modified to prevent unauthorized API calls for visitors or Buyers.
 */
 
 export function useDashboard() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
-  // Only allow fetching if a user session exists and the user is a VENDOR or ADMIN
-  const isAuthorized = !!user && (user.role === "VENDOR" || user.role === "ADMIN");
+  // Logic Change: Only enable the query if a token exists AND the user has sufficient privileges.
+  // This prevents unauthenticated visitors from triggering a 401 and subsequent redirect.
+  const isAuthorized = !!token && !!user && (user.role === "VENDOR" || user.role === "ADMIN");
 
   return useQuery({
     queryKey: ["dashboard"],
     queryFn: getDashboardStats,
-    // 🛑 Stops React Query from calling the endpoint if the user is a guest, buyer, or unauthenticated
+    // 🛑 Strictly stops the query if the user is a guest, buyer, or unauthenticated.
     enabled: isAuthorized,
   });
 }
@@ -15904,9 +15854,6 @@ interface ShippingAddress {
 
 type PaymentMethod = "MTN" | "ORANGE";
 
-// Standard fixed exchange rate: 1 USD ~ 600 XAF (FCFA)
-const USD_TO_XAF = 600;
-
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const user = useAuth((state) => state.user);
@@ -15966,23 +15913,21 @@ export default function CheckoutPage() {
     });
   };
 
-  // Pricing calculations converted to CFA (FCFA) with moderate/reduced tax
+  // Pricing calculations performed natively in CFA (XAF)
   const pricingBreakdown = useMemo(() => {
-    const subtotalUSD = items.reduce(
+    const subtotal = items.reduce(
       (acc, item) => acc + item.price * item.quantity,
       0
     );
-    const shippingUSD = subtotalUSD > 50 ? 0 : 5.99;
-    
-    // Reduced tax rate from 0.08 (8%) to a moderate 0.01 (1%) or 0
-    const taxUSD = subtotalUSD * 0.01; 
-    const totalUSD = subtotalUSD + shippingUSD + taxUSD;
+    const shippingCost = subtotal > 30000 ? 0 : 2500;
+    const tax = subtotal * 0.01; 
+    const total = subtotal + shippingCost + tax;
 
     return {
-      subtotal: subtotalUSD * USD_TO_XAF,
-      shippingCost: shippingUSD * USD_TO_XAF,
-      tax: taxUSD * USD_TO_XAF,
-      total: totalUSD * USD_TO_XAF,
+      subtotal,
+      shippingCost,
+      tax,
+      total,
     };
   }, [items]);
 
@@ -16017,7 +15962,7 @@ export default function CheckoutPage() {
 
     setIsSubmitting(true);
     setSubmitStepText(
-      `Verifying ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"} payment credentials...`
+      `Verifying ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"} payment...`
     );
 
     try {
@@ -16030,7 +15975,7 @@ export default function CheckoutPage() {
           product_id: item.id.startsWith("mock-") ? null : item.id,
           product_name: item.name,
           quantity: item.quantity,
-          price: item.price * USD_TO_XAF,
+          price: item.price,
         })),
         total_price: pricingBreakdown.total,
         payment_method: paymentMethod,
@@ -16054,7 +15999,7 @@ export default function CheckoutPage() {
       console.error("[PostgreSQL Checkout Syncer Error]:", err);
       setErrorMsg(
         err.response?.data?.detail ||
-          "Checkout synchronization with our ledger failed. Please try again."
+          "Checkout synchronization failed. Please try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -16093,9 +16038,6 @@ export default function CheckoutPage() {
           <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-16 text-center max-w-lg mx-auto space-y-4">
             <span className="text-5xl block">🛒</span>
             <h2 className="text-xl font-bold">Your Checkout Cart is Empty</h2>
-            <p className="text-slate-400 text-xs leading-relaxed">
-              Add some products to your cart before proceeding here.
-            </p>
             <button
               onClick={() => navigate("/")}
               className="mt-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl tracking-wider uppercase transition-all shadow-lg cursor-pointer"
@@ -16107,7 +16049,6 @@ export default function CheckoutPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 space-y-6">
               
-              {/* SHIPPING */}
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold flex items-center gap-2.5">
@@ -16118,7 +16059,7 @@ export default function CheckoutPage() {
                     <button
                       type="button"
                       onClick={() => setActiveStep(1)}
-                      className="text-xs text-emerald-400 font-bold hover:underline"
+                      className="text-xs text-emerald-400 font-bold hover:underline cursor-pointer"
                     >
                       Edit
                     </button>
@@ -16203,7 +16144,6 @@ export default function CheckoutPage() {
                 )}
               </div>
 
-              {/* PAYMENT */}
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <h3 className="text-lg font-bold flex items-center gap-2.5 border-b border-white/5 pb-4">
                   <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">2</span>
@@ -16244,14 +16184,14 @@ export default function CheckoutPage() {
                       <p className="font-bold text-slate-200 text-sm">
                         {paymentMethod === "MTN" ? "📱 MTN Mobile Money" : "📱 Orange Money"}
                       </p>
-                      <p className="text-slate-400 text-xs leading-relaxed mt-1">
-                        Enter your phone number below. You will be prompted to authorize the payment.
+                      <p className="text-slate-400 text-xs mt-1">
+                        Enter your phone number. Authorized natively in FCFA.
                       </p>
                     </div>
 
                     <div>
                       <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-                        {paymentMethod === "MTN" ? "MTN Mobile Money Number" : "Orange Money Number"}
+                        Phone Number
                       </label>
                       <input
                         type="tel"
@@ -16265,28 +16205,27 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* REVIEW */}
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <h3 className="text-lg font-bold flex items-center gap-2.5 border-b border-white/5 pb-4">
                   <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">3</span>
-                  Review Ordered Products
+                  Review Order
                 </h3>
                 <ul className="divide-y divide-white/5">
                   {items.map((item) => (
                     <li key={item.id} className="py-4 flex justify-between items-center text-xs">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-slate-900 border border-white/10 flex items-center justify-center text-lg">
-                          {item.icon ? item.icon : "🥦"}
+                          🥦
                         </div>
                         <div>
                           <p className="font-bold text-white text-sm">{item.name}</p>
                           <p className="text-slate-400 font-mono mt-0.5">
-                            {(item.price * USD_TO_XAF).toLocaleString()} XAF x {item.quantity}
+                            {Math.round(item.price).toLocaleString()} FCFA x {item.quantity}
                           </p>
                         </div>
                       </div>
                       <div className="text-right font-mono font-bold text-slate-200">
-                        {(item.price * USD_TO_XAF * item.quantity).toLocaleString()} XAF
+                        {Math.round(item.price * item.quantity).toLocaleString()} FCFA
                       </div>
                     </li>
                   ))}
@@ -16294,28 +16233,27 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* SIDEBAR SUMMARY IN CFA */}
             <div className="space-y-6 lg:sticky lg:top-8">
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
-                <h3 className="text-lg font-bold border-b border-white/5 pb-3">Order Pricing Summary</h3>
+                <h3 className="text-lg font-bold border-b border-white/5 pb-3">Pricing Summary</h3>
                 <div className="space-y-2 text-xs font-medium text-slate-400 font-mono">
                   <div className="flex justify-between">
                     <span>Subtotal</span>
-                    <span className="text-slate-200">{pricingBreakdown.subtotal.toLocaleString()} XAF</span>
+                    <span className="text-slate-200">{Math.round(pricingBreakdown.subtotal).toLocaleString()} FCFA</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Shipping fee</span>
                     <span className="text-slate-200">
-                      {pricingBreakdown.shippingCost === 0 ? "FREE" : `${pricingBreakdown.shippingCost.toLocaleString()} XAF`}
+                      {pricingBreakdown.shippingCost === 0 ? "FREE" : `${Math.round(pricingBreakdown.shippingCost).toLocaleString()} FCFA`}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Estimated Tax</span>
-                    <span className="text-slate-200">{pricingBreakdown.tax.toLocaleString()} XAF</span>
+                    <span>Tax</span>
+                    <span className="text-slate-200">{Math.round(pricingBreakdown.tax).toLocaleString()} FCFA</span>
                   </div>
                   <div className="flex justify-between text-base font-bold text-white pt-3 border-t border-white/5 font-sans">
-                    <span className="normal-case">Total Amount</span>
-                    <span className="text-emerald-400 font-black">{pricingBreakdown.total.toLocaleString()} XAF</span>
+                    <span>Total</span>
+                    <span className="text-emerald-400 font-black">{Math.round(pricingBreakdown.total).toLocaleString()} FCFA</span>
                   </div>
                 </div>
 
@@ -16323,17 +16261,12 @@ export default function CheckoutPage() {
                   type="button"
                   disabled={isSubmitting || items.length === 0}
                   onClick={handlePlaceOrder}
-                  className="w-full mt-4 py-4 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 font-bold text-white rounded-2xl shadow-xl transition-all duration-150 flex items-center justify-center gap-2 border border-emerald-400/20 disabled:border-transparent cursor-pointer"
+                  className="w-full mt-4 py-4 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-800 disabled:opacity-50 font-bold text-white rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></div>
-                      <span className="text-xs tracking-wider uppercase font-extrabold animate-pulse">
-                        {submitStepText || "Completing transaction..."}
-                      </span>
-                    </>
+                    <span className="animate-pulse">{submitStepText || "Processing..."}</span>
                   ) : (
-                    `Pay ${pricingBreakdown.total.toLocaleString()} XAF with ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"}`
+                    `Pay ${Math.round(pricingBreakdown.total).toLocaleString()} FCFA`
                   )}
                 </button>
               </div>
@@ -16345,22 +16278,19 @@ export default function CheckoutPage() {
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
-          <div className="relative bg-slate-900 border border-white/10 p-8 rounded-3xl max-w-md w-full text-center space-y-6 shadow-2xl z-10 animate-in fade-in zoom-in duration-200">
+          <div className="relative bg-slate-900 border border-white/10 p-8 rounded-3xl max-w-md w-full text-center space-y-6 shadow-2xl z-10">
             <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center text-3xl mx-auto text-emerald-400">
               🎉
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-bold tracking-tight text-white">Purchase Completed Successfully!</h3>
-              <p className="text-slate-400 text-xs leading-relaxed max-w-sm mx-auto">
-                Thank you for your business. Your payment of {pricingBreakdown.total.toLocaleString()} XAF was validated.
+              <h3 className="text-2xl font-bold tracking-tight text-white">Order Successful!</h3>
+              <p className="text-slate-400 text-xs">
+                Your payment of {Math.round(pricingBreakdown.total).toLocaleString()} FCFA was validated.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => {
-                setShowSuccessModal(false);
-                navigate("/");
-              }}
+              onClick={() => navigate("/")}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 font-bold text-white rounded-xl text-xs uppercase tracking-wide cursor-pointer"
             >
               Back to Marketplace
@@ -16384,6 +16314,7 @@ import { useCart } from "../store/cart";
 import { useWishlist } from "../store/wishlist";
 
 import Upload from "../features/upload/UploadDropzone";
+import ProductCreateForm from "../components/products/ProductCreateForm";
 
 import { formatImageUrl, normalizeBoundingBox } from "../api/imageUtils";
 import { getProducts } from "../api/products";
@@ -16461,7 +16392,6 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
   } | null;
 
   const isVendor = user?.role?.toLowerCase() === "vendor";
-  const isVerified = Boolean(user?.is_verified);
 
   return (
     <header className="flex flex-col lg:flex-row justify-between lg:items-center gap-6 border-b border-white/10 pb-8">
@@ -16471,7 +16401,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
         </h1>
 
         <p className="text-slate-500 mt-1 text-[10px] font-bold uppercase tracking-widest">
-          AI-Verified Inventory • Express Fulfillment
+          AI-Verified Inventory • Express Fulfillment (XAF)
         </p>
       </div>
 
@@ -16549,12 +16479,21 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
           </button>
         )}
 
-        <button
-          onClick={() => useAuth.getState().logout()}
-          className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-xs font-black uppercase cursor-pointer transition-all"
-        >
-          Logout
-        </button>
+        {user ? (
+          <button
+            onClick={() => useAuth.getState().logout()}
+            className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-xs font-black uppercase cursor-pointer transition-all"
+          >
+            Logout
+          </button>
+        ) : (
+          <Link
+            to="/login"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl text-xs font-black uppercase cursor-pointer transition-all shadow-lg shadow-indigo-900/40"
+          >
+            Sign In
+          </Link>
+        )}
       </div>
     </header>
   );
@@ -16567,13 +16506,12 @@ export default function Dashboard() {
   const location = useLocation();
 
   const [cartOpen, setCartOpen] = useState(false);
-
-  const [marketplaceProducts, setMarketplaceProducts] = useState<
-    ProduceItem[]
-  >([]);
-
+  const [marketplaceProducts, setMarketplaceProducts] = useState<ProduceItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Toggle between AI and Manual creation for Vendors
+  const [vendorCreationMode, setVendorCreationMode] = useState<"ai" | "manual">("ai");
 
   const [activeTab, setActiveTab] = useState<"marketplace" | "activity">(
     location.pathname.includes("wishlist") ||
@@ -16595,6 +16533,8 @@ export default function Dashboard() {
     role?: string;
     is_verified?: boolean;
   } | null;
+
+  const token = useAuth((state) => state.token);
 
   const isVendor = user?.role?.toLowerCase() === "vendor";
   const isVerified = Boolean(user?.is_verified);
@@ -16632,11 +16572,13 @@ export default function Dashboard() {
 
   const getCroppedStyle = useCallback(
     (box: any): React.CSSProperties => {
-      if (!box) {
+      // Fallback for manual products (no bounding box)
+      if (!box || Object.keys(box).length === 0) {
         return {
           width: "100%",
           height: "100%",
           objectFit: "cover",
+          position: "relative",
         };
       }
 
@@ -16689,28 +16631,6 @@ export default function Dashboard() {
         };
       }
 
-      if (
-        typeof box === "object" &&
-        "ymin" in box &&
-        "xmin" in box &&
-        "ymax" in box &&
-        "xmax" in box
-      ) {
-        const w = Number(box.xmax) - Number(box.xmin);
-        const h = Number(box.ymax) - Number(box.ymin);
-
-        if (w > 0 && h > 0) {
-          return {
-            position: "absolute",
-            maxWidth: "none",
-            width: `${100 / w}%`,
-            height: `${100 / h}%`,
-            left: `-${(Number(box.xmin) / w) * 100}%`,
-            top: `-${(Number(box.ymin) / h) * 100}%`,
-          };
-        }
-      }
-
       return {
         width: "100%",
         height: "100%",
@@ -16726,66 +16646,28 @@ export default function Dashboard() {
 
   const mapRawToProduceItem = useCallback(
     (item: RawProduct, fallbackImage = ""): ProduceItem => {
-      const activePrice =
-        item.price ?? item.suggested_price ?? item.unit_price;
-
+      const activePrice = item.price ?? item.suggested_price ?? item.unit_price;
       const rawPrice = Number(activePrice);
-
-      const parsedPrice =
-        !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : 5.0;
-
-      const finalUrl =
-        item.image_url || item.imageUrl || fallbackImage || "";
+      const parsedPrice = !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : 1500.0;
+      const finalUrl = item.image_url || item.imageUrl || fallbackImage || "";
 
       let boxes: BoundingBox[] = [];
-
       if (item.bounding_box) {
         const normalized = normalizeBoundingBox(item.bounding_box);
-
-        if (normalized) {
-          boxes = [normalized];
-        }
-      } else if (item.boundingBoxes || item.bounding_boxes) {
-        const rawBoxes =
-          item.boundingBoxes || item.bounding_boxes || [];
-
-        boxes = rawBoxes
-          .map((b) => normalizeBoundingBox(b))
-          .filter(Boolean) as BoundingBox[];
+        if (normalized) boxes = [normalized];
       }
 
       return {
-        id: String(
-          item.id ||
-            `prod-${Math.random().toString(36).substring(2, 9)}`
-        ),
-
-        name: String(
-          item.name || item.brand || "AI-Verified Produce"
-        ),
-
-        category: String(
-          item.category || "Fresh Produce"
-        ),
-
-        confidence_score:
-          typeof item.confidence_score === "number"
-            ? item.confidence_score
-            : 0.95,
-
+        id: String(item.id || `prod-${Math.random().toString(36).substring(2, 9)}`),
+        name: String(item.name || item.brand || "AI-Verified Produce"),
+        category: String(item.category || "Fresh Produce"),
+        confidence_score: typeof item.confidence_score === "number" ? item.confidence_score : 0.95,
         imageUrl: finalUrl,
-
         price: parsedPrice,
-
         bounding_box: item.bounding_box,
-
         boundingBoxes: boxes,
-
         stock: item.stock_quantity ?? 50,
-
-        vendor_id: item.vendor_id
-          ? String(item.vendor_id)
-          : undefined,
+        vendor_id: item.vendor_id ? String(item.vendor_id) : undefined,
       };
     },
     []
@@ -16798,9 +16680,7 @@ export default function Dashboard() {
   const refreshProductsData = useCallback(async () => {
     try {
       setLoading(true);
-
       const data = await getProducts({ approved: true });
-
       const rawProducts: RawProduct[] = Array.isArray(data)
         ? data
         : Array.isArray((data as any)?.items)
@@ -16813,85 +16693,40 @@ export default function Dashboard() {
 
       setMarketplaceProducts(mapped);
 
-      if (!isVendor) {
-        const ordersRes = await getBuyerOrders();
-        setBuyerOrders(ordersRes || []);
+      if (!isVendor && user && token) {
+        try {
+          const ordersRes = await getBuyerOrders();
+          setBuyerOrders(ordersRes || []);
+        } catch (orderErr) {
+          console.error("Non-critical: Order fetching failed.", orderErr);
+        }
       }
     } catch (error) {
       console.error("Marketplace Sync Error:", error);
     } finally {
       setLoading(false);
     }
-  }, [mapRawToProduceItem, isVendor]);
+  }, [mapRawToProduceItem, isVendor, user, token]);
 
   useEffect(() => {
     refreshProductsData();
   }, [refreshProductsData]);
 
   // ---------------------------------------------------------
-  // HANDLE NEW UPLOAD
-  // ---------------------------------------------------------
-
-  useEffect(() => {
-    const handleNewUpload = (event: Event) => {
-      const customEvent =
-        event as CustomEvent<{
-          image_url: string;
-          products: RawProduct[];
-        }>;
-
-      const { image_url, products } =
-        customEvent.detail || {};
-
-      if (Array.isArray(products) && products.length > 0) {
-        const formattedProducts: ProduceItem[] =
-          products.map((item) =>
-            mapRawToProduceItem(item, image_url)
-          );
-
-        setMarketplaceProducts((prev) => [
-          ...formattedProducts,
-          ...prev,
-        ]);
-      }
-    };
-
-    window.addEventListener(
-      "produceUploaded",
-      handleNewUpload
-    );
-
-    return () =>
-      window.removeEventListener(
-        "produceUploaded",
-        handleNewUpload
-      );
-  }, [mapRawToProduceItem]);
-
-  // ---------------------------------------------------------
   // REFRESH AFTER PRODUCT SAVE
   // ---------------------------------------------------------
 
   useEffect(() => {
-    window.addEventListener(
-      "products:updated",
-      refreshProductsData
-    );
-
-    return () =>
-      window.removeEventListener(
-        "products:updated",
-        refreshProductsData
-      );
+    window.addEventListener("products:updated", refreshProductsData);
+    return () => window.removeEventListener("products:updated", refreshProductsData);
   }, [refreshProductsData]);
 
   // ---------------------------------------------------------
-  // CART
+  // CART & WISHLIST HANDLERS
   // ---------------------------------------------------------
 
   const handleAddToCart = useCallback(
     (product: ProduceItem) => {
-      // 🟢 Redirect to login if user is not authenticated
       if (!user) {
         navigate("/login");
         return;
@@ -16900,7 +16735,7 @@ export default function Dashboard() {
       addToCart({
         id: product.id,
         name: product.name,
-        price: product.price ?? 5.0,
+        price: product.price ?? 1500.0,
         category: product.category ?? "Fresh Produce",
         icon: "🥦",
         vendor_id: product.vendor_id,
@@ -16909,12 +16744,7 @@ export default function Dashboard() {
     [addToCart, user, navigate]
   );
 
-  // ---------------------------------------------------------
-  // WISHLIST
-  // ---------------------------------------------------------
-
   const handleToggleWishlist = (product: ProduceItem) => {
-    // 🟢 Redirect to login if user is not authenticated
     if (!user) {
       navigate("/login");
       return;
@@ -16972,20 +16802,7 @@ export default function Dashboard() {
 
             <p className="text-xs text-slate-400 leading-relaxed">
               Your vendor registration is currently being verified by
-              our platform administrators. You will automatically
-              receive dashboard access once verified.
-            </p>
-          </div>
-
-          <div className="bg-slate-950/60 p-4 rounded-xl border border-white/5 text-left text-[11px] text-slate-500 space-y-1">
-            <p>
-              • Verification normally takes less than 24 business
-              hours.
-            </p>
-
-            <p>
-              • You can contact help@smartproduct.ai for status query
-              tickets.
+              our platform administrators.
             </p>
           </div>
 
@@ -17016,23 +16833,16 @@ export default function Dashboard() {
           setActiveTab={setActiveTab}
         />
 
-        {/* =====================================================
-            VENDOR DASHBOARD
-            ===================================================== */}
-
         {isVendor ? (
           <main className="space-y-8 animate-in fade-in duration-200">
             {/* STATS */}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   Sales Revenue
                 </span>
-
                 <h3 className="text-3xl font-black text-emerald-400 mt-2">
-                  
-                  {Math.round(stats?.revenue ?? 0).toLocaleString()}FCFA
+                  {Math.round(stats?.revenue ?? 0).toLocaleString()} FCFA
                 </h3>
               </div>
 
@@ -17040,7 +16850,6 @@ export default function Dashboard() {
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   New Orders
                 </span>
-
                 <h3 className="text-3xl font-black text-amber-400 mt-2">
                   {stats?.new_orders ?? 0}
                 </h3>
@@ -17050,7 +16859,6 @@ export default function Dashboard() {
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   Pending Fulfillment
                 </span>
-
                 <h3 className="text-3xl font-black text-indigo-400 mt-2">
                   {stats?.pending_orders ?? 0}
                 </h3>
@@ -17058,491 +16866,192 @@ export default function Dashboard() {
 
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
                 <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Completed Orders
-                </span>
-
-                <h3 className="text-3xl font-black text-emerald-400 mt-2">
-                  {stats?.completed_orders ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Low Stock Alerts
-                </span>
-
-                <h3 className="text-3xl font-black text-rose-400 mt-2">
-                  {stats?.low_stock_alerts ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Listed Products
-                </span>
-
-                <h3 className="text-3xl font-black text-slate-100 mt-2">
-                  {stats?.products ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
-                  Images Scanned
-                </span>
-
-                <h3 className="text-3xl font-black text-slate-100 mt-2">
-                  {stats?.images ?? 0}
-                </h3>
-              </div>
-
-              <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-xl">
-                <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider font-mono">
                   AI Accuracy
                 </span>
-
                 <h3 className="text-3xl font-black text-cyan-400 mt-2">
                   {((stats?.accuracy ?? 0.96) * 100).toFixed(1)}%
                 </h3>
               </div>
             </div>
 
-            {/* QUICK AI VERIFICATION */}
-
+            {/* PRODUCT MANAGEMENT HUB */}
             <div className="grid grid-cols-1 gap-6">
-              <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
-                <div className="border-b border-white/10 pb-3">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <span>📸</span>
-                    Quick AI Verification
-                  </h2>
+              <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-white/10 pb-4">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                      <span>📦</span> Product Management
+                    </h2>
+                    <p className="text-[11px] text-slate-500 uppercase font-black tracking-widest">
+                      Choose creation workflow
+                    </p>
+                  </div>
 
-                  <p className="text-slate-400 text-xs mt-1">
-                    Upload new produce images for AI quality audit
-                  </p>
+                  <div className="flex bg-slate-950 p-1 rounded-2xl border border-white/5 self-start">
+                    <button
+                      onClick={() => setVendorCreationMode("ai")}
+                      className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        vendorCreationMode === "ai" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/40" : "text-slate-500 hover:text-white"
+                      }`}
+                    >
+                      AI Assistant
+                    </button>
+                    <button
+                      onClick={() => setVendorCreationMode("manual")}
+                      className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        vendorCreationMode === "manual" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/40" : "text-slate-500 hover:text-white"
+                      }`}
+                    >
+                      Manual Entry
+                    </button>
+                  </div>
                 </div>
 
-                <Upload />
+                {vendorCreationMode === "ai" ? (
+                  <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl text-[11px] text-indigo-300 leading-relaxed">
+                      <strong>✨ AI Assistant:</strong> Upload a physical shelf image. Gemini will automatically detect items, estimate pricing, and extract attributes.
+                    </div>
+                    <Upload />
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in zoom-in-95 duration-300">
+                    <ProductCreateForm 
+                      onSuccess={() => {
+                        setVendorCreationMode("ai");
+                        refreshProductsData();
+                      }}
+                      onCancel={() => setVendorCreationMode("ai")}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* MY STORE INVENTORY */}
-
             <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6">
               <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    My Store Inventory
-                  </h2>
-
-                  <p className="text-slate-400 text-xs mt-1">
-                    Real-time shelf placement & stock configurations
-                  </p>
-                </div>
-
-                <Link
-                  to="/review"
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline"
-                >
+                <h2 className="text-2xl font-bold text-white">My Store Inventory</h2>
+                <Link to="/review" className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline">
                   View Full Catalog History →
                 </Link>
               </div>
-
+              
               {marketplaceProducts.length === 0 ? (
                 <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl">
-                  Your store inventory ledger is empty. Upload produce
-                  photos above to parse products.
+                  Inventory ledger empty. List products above.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {marketplaceProducts.map((p) => {
-                    return (
-                      <div
-                        key={p.id}
-                        className="bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden"
-                      >
-                        {(() => {
-                          const imageUrl =
-                            p.imageUrl ||
-                            (p as any).image_url;
-
-                          const formattedUrl =
-                            formatImageUrl(imageUrl);
-
-                          const normalizedBox =
-                            normalizeBoundingBox(p.bounding_box);
-
-                          let imgStyle: React.CSSProperties = {
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          };
-
-                          if (
-                            normalizedBox &&
-                            normalizedBox.width > 0 &&
-                            normalizedBox.height > 0
-                          ) {
-                            imgStyle = {
-                              position: "absolute",
-                              maxWidth: "none",
-                              maxHeight: "none",
-                              width: `${
-                                100 *
-                                (100 / normalizedBox.width)
-                              }%`,
-                              height: `${
-                                100 *
-                                (100 / normalizedBox.height)
-                              }%`,
-                              left: `-${
-                                normalizedBox.x *
-                                (100 / normalizedBox.width)
-                              }%`,
-                              top: `-${
-                                normalizedBox.y *
-                                (100 / normalizedBox.height)
-                              }%`,
-                            };
-                          }
-
-                          return (
-                            <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
-                              {formattedUrl ? (
-                                <img
-                                  src={formattedUrl}
-                                  alt={
-                                    p.name ||
-                                    "Inventory Item"
-                                  }
-                                  className="max-w-none absolute transition-all duration-300"
-                                  style={imgStyle}
-                                  onError={(e) => {
-                                    console.error(
-                                      "[Vendor Dashboard Image Error] Failed to load:",
-                                      formattedUrl
-                                    );
-
-                                    e.currentTarget.style.display =
-                                      "none";
-                                  }}
-                                />
-                              ) : (
-                                <div className="text-[10px] font-bold text-slate-600 uppercase">
-                                  No Image Available
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        <div className="p-4">
-                          <h4 className="font-bold text-sm truncate text-white">
-                            {p.name}
-                          </h4>
-
-                          <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
-                            <span>
-                              Qty:{" "}
-                              <strong className="text-slate-200">
-                                {p.stock ?? 10} units
-                              </strong>
-                            </span>
-
-                            <span className="text-emerald-400 font-bold">
-                              {Math.round((p.price ?? 0) * 600).toLocaleString()} FCFA
-                            </span>
-                          </div>
+                  {marketplaceProducts.map((p) => (
+                    <div key={p.id} className="bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden">
+                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
+                        <img
+                          src={formatImageUrl(p.imageUrl || (p as any).image_url)}
+                          alt={p.name}
+                          className="max-w-none absolute transition-all duration-300"
+                          style={getCroppedStyle(p.bounding_box)}
+                          onError={(e) => (e.currentTarget.style.display = "none")}
+                        />
+                      </div>
+                      <div className="p-4">
+                        <h4 className="font-bold text-sm truncate text-white">{p.name}</h4>
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
+                          <span>Qty: <strong className="text-slate-200">{p.stock ?? 10} units</strong></span>
+                          <span className="text-emerald-400 font-bold">{Math.round(p.price ?? 0).toLocaleString()} FCFA</span>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </main>
         ) : activeTab === "marketplace" ? (
-          /* =====================================================
-             BUYER MARKETPLACE
-             ===================================================== */
-
+          /* BUYER MARKETPLACE VIEW */
           <main className="space-y-6 animate-in fade-in duration-200">
             <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    Available Produce
-                  </h2>
-
-                  <p className="text-slate-400 text-xs mt-1">
-                    Fresh, AI-inspected batch offerings from verified
-                    vendors
-                  </p>
+                  <h2 className="text-2xl font-bold text-white">Available Produce</h2>
+                  <p className="text-slate-400 text-xs mt-1">Fresh offerings from verified vendors (FCFA)</p>
                 </div>
-
                 <button
                   onClick={() => setActiveTab("activity")}
                   className="text-emerald-400 hover:text-emerald-300 text-xs font-bold underline transition-colors cursor-pointer"
                 >
-                  View My Previous Orders & Activity →
+                  View Activity →
                 </button>
               </div>
 
               {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4 animate-pulse">
                   {[1, 2, 3].map((n) => (
-                    <div
-                      key={n}
-                      className="bg-white/5 border border-white/5 p-5 rounded-2xl animate-pulse space-y-4"
-                    >
-                      <div className="h-44 bg-slate-900 rounded-xl" />
-                      <div className="h-4 bg-slate-800 rounded w-3/4" />
-                      <div className="h-3 bg-slate-800 rounded w-1/2" />
-                      <div className="h-10 bg-slate-800 rounded-xl" />
-                    </div>
+                    <div key={n} className="h-64 bg-white/5 rounded-2xl" />
                   ))}
                 </div>
               ) : filteredProducts.length === 0 ? (
-                <div className="py-16 text-center text-slate-400 text-sm bg-white/[0.01] rounded-2xl border border-dashed border-white/10">
-                  <span className="text-3xl block mb-2">
-                    🔍
-                  </span>
-
-                  {searchQuery
-                    ? `No produce matching "${searchQuery}"`
-                    : "No products available in the catalog yet."}
-                </div>
+                <div className="py-16 text-center text-slate-400 text-sm">No products found.</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {filteredProducts.map((prod) => {
-                    const isWishlisted = isInWishlist(prod.id);
-
-                    const isElectronics =
-                      prod.category?.toLowerCase() ===
-                        "electronics" ||
-                      prod.name
-                        .toLowerCase()
-                        .includes("iphone");
-
-                    return (
-                      <div
-                        key={prod.id}
-                        className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 flex flex-col justify-between transition-all hover:border-white/20 hover:bg-white/[0.07] relative group"
+                  {filteredProducts.map((prod) => (
+                    <div key={prod.id} className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 relative group transition-all hover:bg-white/[0.07]">
+                      <button
+                        onClick={() => handleToggleWishlist(prod)}
+                        className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm cursor-pointer"
                       >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleToggleWishlist(prod)
-                          }
-                          className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-                          title={
-                            isWishlisted
-                              ? "Remove from Wishlist"
-                              : "Add to Wishlist"
-                          }
-                        >
-                          {isWishlisted ? "⭐" : "☆"}
-                        </button>
-
-                        <div>
-                          {/* BUYER IMAGE BLOCK
-                              SAME RENDERING AS VENDOR DASHBOARD */}
-
-                          {(() => {
-                            const imageUrl =
-                              prod.imageUrl ||
-                              (prod as any).image_url;
-
-                            const formattedUrl =
-                              formatImageUrl(imageUrl);
-
-                            const normalizedBox =
-                              normalizeBoundingBox(
-                                prod.bounding_box
-                              );
-
-                            let imgStyle: React.CSSProperties = {
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                            };
-
-                            if (
-                              normalizedBox &&
-                              normalizedBox.width > 0 &&
-                              normalizedBox.height > 0
-                            ) {
-                              imgStyle = {
-                                position: "absolute",
-                                maxWidth: "none",
-                                maxHeight: "none",
-                                width: `${
-                                  100 *
-                                  (100 /
-                                    normalizedBox.width)
-                                }%`,
-                                height: `${
-                                  100 *
-                                  (100 /
-                                    normalizedBox.height)
-                                }%`,
-                                left: `-${
-                                  normalizedBox.x *
-                                  (100 /
-                                    normalizedBox.width)
-                                }%`,
-                                top: `-${
-                                  normalizedBox.y *
-                                  (100 /
-                                    normalizedBox.height)
-                                }%`,
-                              };
-                            }
-
-                            return (
-                              <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
-                                {formattedUrl ? (
-                                  <img
-                                    src={formattedUrl}
-                                    alt={
-                                      prod.name ||
-                                      "Produce"
-                                    }
-                                    className="max-w-none absolute transition-all duration-300"
-                                    style={imgStyle}
-                                    onError={(e) => {
-                                      console.error(
-                                        "[Buyer Dashboard Image Error] Failed to load:",
-                                        formattedUrl
-                                      );
-
-                                      e.currentTarget.style.display =
-                                        "none";
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="text-[10px] font-bold text-slate-600 uppercase">
-                                    No Image Available
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-
-                          <div className="relative">
-                            <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black text-emerald-400 border border-emerald-500/20 z-10">
-                              ✨ AI VERIFIED
-                            </div>
-                          </div>
-
-                          <h3 className="font-bold text-lg text-white truncate h-7 mt-3">
-                            {prod.name}
-                          </h3>
-
-                          <p className="text-xs text-slate-400 h-4">
-                            {prod.category || "Fresh Produce"}
-                          </p>
-
-                          <div className="flex justify-between items-center mt-2">
-                            <p className="text-base font-bold text-emerald-400">
-                              $
-                              {(prod.price ?? 5.0).toFixed(
-                                2
-                              )}{" "}
-                              /{" "}
-                              {isElectronics
-                                ? "unit"
-                                : "kg"}
-                            </p>
-
-                            <span className="text-[10px] text-slate-500 font-medium">
-                              Stock:{" "}
-                              {prod.stock ?? 25} units
-                            </span>
-                          </div>
+                        {isInWishlist(prod.id) ? "⭐" : "☆"}
+                      </button>
+                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl flex items-center justify-center">
+                        <img
+                          src={formatImageUrl(prod.imageUrl || (prod as any).image_url)}
+                          alt={prod.name}
+                          className="max-w-none absolute transition-all duration-300"
+                          style={getCroppedStyle(prod.bounding_box)}
+                          onError={(e) => (e.currentTarget.style.display = "none")}
+                        />
+                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black text-emerald-400 border border-emerald-500/20">
+                          ✨ AI VERIFIED
                         </div>
-
-                        <button
-                          onClick={() =>
-                            handleAddToCart(prod)
-                          }
-                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-lg shadow-emerald-950/50 mt-4"
-                        >
-                          Add to Cart
-                        </button>
                       </div>
-                    );
-                  })}
+                      <h3 className="font-bold text-lg text-white truncate mt-3">{prod.name}</h3>
+                      <div className="flex justify-between items-center">
+                        <p className="text-base font-bold text-emerald-400">{Math.round(prod.price ?? 1500).toLocaleString()} FCFA</p>
+                        <span className="text-[10px] text-slate-500 font-medium">Stock: {prod.stock ?? 25} units</span>
+                      </div>
+                      <button
+                        onClick={() => handleAddToCart(prod)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-lg"
+                      >
+                        Add to Cart
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </main>
         ) : (
-          /* =====================================================
-             ACTIVITY
-             ===================================================== */
-
+          /* ACTIVITY / USER DASHBOARD VIEW */
           <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-200">
             <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl lg:col-span-2 space-y-6">
-              <div>
-                <h3 className="text-xl font-bold text-white">
-                  Recent Orders & Shipment Tracking
-                </h3>
-
-                <p className="text-slate-400 text-xs">
-                  Simulated Sandbox Order Shipments
-                </p>
-              </div>
-
-              {buyerOrders.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl">
-                  You have not placed any orders yet. Add items to your
-                  cart to purchase.
+              <h3 className="text-xl font-bold text-white">Recent Orders</h3>
+              {!user ? (
+                <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl space-y-4">
+                  <p>Please sign in to view your activity.</p>
+                  <Link to="/login" className="inline-block bg-indigo-600 px-4 py-2 rounded-xl font-black uppercase text-white">Sign In</Link>
                 </div>
+              ) : buyerOrders.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-white/5 rounded-2xl">No orders found.</div>
               ) : (
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                <div className="space-y-4">
                   {buyerOrders.map((ord) => (
-                    <div
-                      key={ord.id}
-                      className="bg-slate-900/60 p-4 rounded-2xl border border-white/5 space-y-3"
-                    >
-                      <div className="flex justify-between text-[11px] font-semibold text-slate-400 font-mono">
-                        <span>
-                          OrderID:{" "}
-                          <strong className="text-slate-200">
-                            {ord.id.substring(0, 13)}...
-                          </strong>
-                        </span>
-
-                        <span>{ord.date}</span>
+                    <div key={ord.id} className="bg-slate-900/60 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
+                      <div>
+                        <p className="text-xs font-bold text-white">Order {ord.id.substring(0, 8)}</p>
+                        <p className="text-[10px] text-slate-400">{ord.date}</p>
                       </div>
-
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-300 font-medium truncate max-w-xs">
-                          {ord.items
-                            ?.map(
-                              (i: any) =>
-                                `${i.product_name} x${i.quantity}`
-                            )
-                            .join(", ")}
-                        </span>
-
-                        <span className="font-mono text-emerald-400 font-bold">
-                          ${ord.total_price}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between items-center pt-2 border-t border-white/5 text-[10px]">
-                        <span className="text-slate-500 font-mono">
-                          Carrier:{" "}
-                          {ord.carrier ||
-                            "Sandbox logistics"}
-                        </span>
-
-                        <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded font-bold uppercase">
-                          {ord.status}
-                        </span>
-                      </div>
+                      <span className="font-mono text-emerald-400 font-bold">{Math.round(ord.total_price).toLocaleString()} FCFA</span>
+                      <span className="bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold">{ord.status}</span>
                     </div>
                   ))}
                 </div>
@@ -17550,262 +17059,70 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-6">
-              {/* PROFILE */}
-
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  Profile Credentials
-                </h3>
-
-                <div className="space-y-1 text-xs">
-                  <p className="text-slate-500">
-                    Email:{" "}
-                    <strong className="text-slate-300 font-mono font-medium">
-                      {user?.email}
-                    </strong>
-                  </p>
-
-                  <p className="text-slate-500">
-                    Account Role:{" "}
-                    <span className="bg-indigo-500/15 text-indigo-400 px-2 py-0.5 rounded font-bold font-mono text-[10px]">
-                      {user?.role}
-                    </span>
-                  </p>
-                </div>
+                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">Profile</h3>
+                {user ? (
+                  <div className="text-xs space-y-1">
+                    <p className="text-slate-500">Email: <strong className="text-slate-300">{user.email}</strong></p>
+                    <p className="text-slate-500">Role: <span className="text-indigo-400 uppercase font-bold">{user.role}</span></p>
+                  </div>
+                ) : <p className="text-[11px] text-slate-500">Guest mode</p>}
               </div>
 
-              {/* WISHLIST */}
-
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  My Wishlist Favorites
-                </h3>
-
-                {wishlistItems.length === 0 ? (
-                  <p className="text-[11px] text-slate-500 py-3 text-center">
-                    Your wishlist is empty. Add products on the
-                    marketplace.
-                  </p>
+                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">Wishlist</h3>
+                {!user ? (
+                  <p className="text-[11px] text-slate-500 text-center">Login to save items.</p>
+                ) : wishlistItems.length === 0 ? (
+                  <p className="text-[11px] text-slate-500 text-center">Empty.</p>
                 ) : (
-                  <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1">
-                    {wishlistItems.map((fav) => {
-                      const favoriteImageUrl =
-                        formatImageUrl(fav.imageUrl);
-
-                      return (
-                        <div
-                          key={fav.id}
-                          className="flex justify-between items-center text-xs bg-slate-900/40 p-2 rounded-xl border border-white/5"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            {favoriteImageUrl ? (
-                              <img
-                                src={favoriteImageUrl}
-                                alt={fav.name}
-                                className="w-8 h-8 rounded-lg object-cover border border-white/10 shrink-0"
-                                onError={(e) => {
-                                  e.currentTarget.style.display =
-                                    "none";
-                                }}
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-white/10 shrink-0 flex items-center justify-center text-[10px]">
-                                📦
-                              </div>
-                            )}
-
-                            <div className="truncate">
-                              <span className="text-slate-200 font-semibold block truncate text-[11px]">
-                                {fav.name}
-                              </span>
-
-                              <span className="text-[10px] text-slate-500">
-                                $
-                                {fav.price?.toFixed(
-                                  2
-                                )}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() =>
-                                handleAddToCart(
-                                  fav
-                                )
-                              }
-                              className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-2 py-1 rounded text-[10px]"
-                            >
-                              Buy
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                removeFromWishlist(
-                                  fav.id
-                                )
-                              }
-                              className="text-slate-500 hover:text-red-400 font-bold p-1 text-[11px]"
-                              title="Remove"
-                            >
-                              ✕
-                            </button>
-                          </div>
+                  <div className="space-y-3">
+                    {wishlistItems.map((fav) => (
+                      <div key={fav.id} className="flex justify-between items-center bg-slate-900/40 p-2 rounded-xl border border-white/5">
+                        <span className="text-white text-[11px] font-semibold truncate max-w-[100px]">{fav.name}</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleAddToCart(fav)} className="bg-emerald-600 px-2 py-1 rounded text-[9px] font-bold">Buy</button>
+                          <button onClick={() => removeFromWishlist(fav.id)} className="text-slate-500 text-[9px]">✕</button>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
-
-              {/* RECOMMENDED */}
-
-              <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  Recommended For You
-                </h3>
-
-                <div className="space-y-3">
-                  {recommendedProducts.map((rec) => (
-                    <div
-                      key={rec.id}
-                      className="flex justify-between items-center text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">
-                          🥦
-                        </span>
-
-                        <span className="text-slate-200 font-medium truncate max-w-[120px]">
-                          {rec.name}
-                        </span>
-                      </div>
-
-                      <span className="font-mono text-emerald-400 font-bold text-[11px]">
-                        ${rec.price?.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* NOTIFICATIONS */}
-
-              <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
-                  Live Alerts & Notifications
-                </h3>
-
-                <ul className="space-y-2">
-                  {notifications.map((msg, idx) => (
-                    <li
-                      key={idx}
-                      className="p-2.5 bg-slate-900/60 border border-white/5 rounded-xl text-[10px] text-slate-400 leading-relaxed flex items-start gap-2"
-                    >
-                      <span className="text-emerald-400 shrink-0">
-                        🔔
-                      </span>
-
-                      <span>{msg}</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
           </main>
         )}
       </div>
 
-      {/* =====================================================
-          CART
-          ===================================================== */}
-
+      {/* SHOPPING CART DRAWER (PRESERVED) */}
       {cartOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-end z-50 transition-opacity">
           <div className="bg-slate-900 border-l border-white/10 w-full max-w-md p-6 h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200">
             <div>
               <div className="flex justify-between items-center pb-4 border-b border-white/10">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-white">
-                    Your Cart ({totalCartCount})
-                  </h3>
-
+                  <h3 className="text-lg font-bold text-white">Your Cart ({totalCartCount})</h3>
                   {cartItems.length > 0 && (
-                    <button
-                      onClick={clearCart}
-                      className="text-[10px] text-slate-400 hover:text-red-400 underline transition-colors ml-2"
-                    >
-                      Clear all
-                    </button>
+                    <button onClick={clearCart} className="text-[10px] text-slate-400 hover:text-red-400 underline transition-colors">Clear all</button>
                   )}
                 </div>
-
-                <button
-                  onClick={() => setCartOpen(false)}
-                  className="text-slate-400 hover:text-white font-bold text-xl cursor-pointer p-1 transition-colors"
-                >
-                  ✕
-                </button>
+                <button onClick={() => setCartOpen(false)} className="text-slate-400 hover:text-white font-bold text-xl cursor-pointer">✕</button>
               </div>
 
               {cartItems.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-sm space-y-3">
-                  <span className="text-4xl block">
-                    🛒
-                  </span>
-
-                  <p>Your cart is currently empty.</p>
-                </div>
+                <div className="text-center py-12 text-slate-400 text-sm">Your cart is currently empty.</div>
               ) : (
                 <ul className="mt-4 space-y-3 max-h-[55vh] overflow-y-auto pr-1">
                   {cartItems.map((item) => (
-                    <li
-                      key={item.id}
-                      className="bg-white/5 p-3.5 rounded-xl text-sm flex justify-between items-center border border-white/5"
-                    >
+                    <li key={item.id} className="bg-white/5 p-3.5 rounded-xl text-sm flex justify-between items-center border border-white/5">
                       <div>
-                        <p className="font-semibold text-white truncate max-w-[180px]">
-                          {item.name}
-                        </p>
-
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {Math.round(item.price ?? 0).toLocaleString()} FCFA /{" "}
-                          {item.category?.toLowerCase() ===
-                          "electronics"
-                            ? "unit"
-                            : "kg"}
-                        </p>
+                        <p className="font-semibold text-white truncate max-w-[180px]">{item.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{Math.round(item.price).toLocaleString()} FCFA</p>
                       </div>
-
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() =>
-                            updateQuantity(
-                              item.id,
-                              -1
-                            )
-                          }
-                          className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs transition-colors"
-                        >
-                          -
-                        </button>
-
-                        <span className="text-white font-mono font-bold text-xs px-1">
-                          {item.quantity}
-                        </span>
-
-                        <button
-                          onClick={() =>
-                            updateQuantity(
-                              item.id,
-                              1
-                            )
-                          }
-                          className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs transition-colors"
-                        >
-                          +
-                        </button>
+                        <button onClick={() => updateQuantity(item.id, -1)} className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs">-</button>
+                        <span className="text-white font-mono font-bold text-xs px-1">{item.quantity}</span>
+                        <button onClick={() => updateQuantity(item.id, 1)} className="w-6 h-6 bg-white/10 hover:bg-white/20 text-white rounded-md flex items-center justify-center font-bold text-xs">+</button>
                       </div>
                     </li>
                   ))}
@@ -17815,27 +17132,15 @@ export default function Dashboard() {
 
             <div className="border-t border-white/10 pt-4 space-y-4">
               <div className="flex justify-between items-center text-white">
-                <span className="text-slate-400 text-sm">
-                  Total Amount
-                </span>
-
-                <span className="text-xl font-bold text-emerald-400">
-                {Math.round(totalCartPrice ?? 0).toLocaleString()} FCFA
-                </span>
+                <span className="text-slate-400 text-sm">Total Amount</span>
+                <span className="text-xl font-bold text-emerald-400">{Math.round(totalCartPrice).toLocaleString()} FCFA</span>
               </div>
-
               <div className="flex gap-3">
-                <button
-                  onClick={() => setCartOpen(false)}
-                  className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer"
-                >
-                  Continue Shopping
-                </button>
-
-                <button
-                  disabled={cartItems.length === 0}
-                  onClick={handleProceedToCheckout}
-                  className="w-1/2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer shadow-lg shadow-emerald-950/50"
+                <button onClick={() => setCartOpen(false)} className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer">Continue Shopping</button>
+                <button 
+                  disabled={cartItems.length === 0} 
+                  onClick={handleProceedToCheckout} 
+                  className="w-1/2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all text-xs cursor-pointer shadow-lg shadow-emerald-950/50"
                 >
                   Proceed to Payment
                 </button>
@@ -17847,7 +17152,6 @@ export default function Dashboard() {
     </div>
   );
 }
-
 
 ========================= FILE END: ./smart_product_ai_frontend/src/pages/dashboard.tsx =========================
 
@@ -17866,9 +17170,8 @@ import type { BoundingBox } from "../pages/dashboard";
  * - https:// URLs
  * - blob: URLs
  * - data: URLs
- * - relative backend paths
+ * - relative backend paths (e.g. uploads/uuid.jpg)
  * - /uploads/... paths
- * - uploads/... paths
  * - Windows-style backslashes
  *
  * Relative paths are always resolved against the FastAPI backend.
@@ -17880,7 +17183,8 @@ export const formatImageUrl = (
     !imagePath ||
     typeof imagePath !== "string" ||
     imagePath === "null" ||
-    imagePath === "undefined"
+    imagePath === "undefined" ||
+    imagePath.trim() === ""
   ) {
     return "";
   }
@@ -17889,10 +17193,6 @@ export const formatImageUrl = (
   const normalized = imagePath
     .trim()
     .replace(/\\/g, "/");
-
-  if (!normalized) {
-    return "";
-  }
 
   /*
    * ----------------------------------------------------------
@@ -17903,23 +17203,10 @@ export const formatImageUrl = (
   if (
     normalized.startsWith("http://") ||
     normalized.startsWith("https://") ||
-    normalized.startsWith("data:")
+    normalized.startsWith("data:") ||
+    normalized.startsWith("blob:")
   ) {
     return normalized;
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * BLOB URL
-   * ----------------------------------------------------------
-   *
-   * Blob URLs are temporary browser URLs.
-   * Do not attempt to convert them into backend URLs.
-   * ----------------------------------------------------------
-   */
-
-  if (normalized.startsWith("blob:")) {
-    return "";
   }
 
   /*
@@ -17927,35 +17214,22 @@ export const formatImageUrl = (
    * FASTAPI BACKEND
    * ----------------------------------------------------------
    *
-   * IMPORTANT:
+   * Path resolution logic:
    *
-   * Your uploaded images are stored by FastAPI in:
-   *
-   *     uploads/
-   *
-   * Therefore a backend value such as:
-   *
-   *     uploads/iphone.png
-   *
-   * becomes:
-   *
-   *     http://localhost:8000/uploads/iphone.png
-   *
-   * A value such as:
-   *
-   *     /uploads/iphone.png
-   *
-   * also becomes:
-   *
-   *     http://localhost:8000/uploads/iphone.png
+   * If the DB stores "uploads/83db...jpg", we want it served from 
+   * the FastAPI mount at "/uploads". 
+   * 
+   * Note: The mount point is usually '/uploads'.
    * ----------------------------------------------------------
    */
 
   const backendHost = "http://localhost:8000";
 
-  const cleanPath = normalized.startsWith("/")
-    ? normalized
-    : `/${normalized}`;
+  // Clean the path to ensure exactly one leading slash
+  let cleanPath = normalized;
+  if (!cleanPath.startsWith("/")) {
+    cleanPath = "/" + cleanPath;
+  }
 
   return `${backendHost}${cleanPath}`;
 };
@@ -17967,28 +17241,6 @@ export const formatImageUrl = (
  *
  * Normalizes incoming bounding-box data into the percentage-based
  * BoundingBox format expected by dashboard.tsx.
- *
- * Supported formats:
- *
- * 1. Array:
- *    [ymin, xmin, ymax, xmax]
- *
- * 2. Object:
- *    { x, y, width, height }
- *
- * 3. Object:
- *    { xmin, ymin, xmax, ymax }
- *
- * 4. Object:
- *    { left, top, width, height }
- *
- * Coordinates can be:
- *
- * - normalized 0..1
- * - percentages 0..100
- * - absolute pixel coordinates
- *
- * The dashboard crop renderer expects percentages.
  */
 export const normalizeBoundingBox = (
   box: any
@@ -18002,15 +17254,7 @@ export const normalizeBoundingBox = (
 
   let parsed = box;
 
-  /*
-   * ----------------------------------------------------------
-   * JSON STRING
-   * ----------------------------------------------------------
-   *
-   * Backend sometimes returns bounding_box as a
-   * JSON string rather than an actual object/array.
-   */
-
+  // Handle JSON stored as a string
   if (typeof parsed === "string") {
     try {
       parsed = JSON.parse(parsed);
@@ -18021,23 +17265,8 @@ export const normalizeBoundingBox = (
 
   /*
    * ----------------------------------------------------------
-   * ARRAY FORMAT
+   * ARRAY FORMAT [ymin, xmin, ymax, xmax]
    * ----------------------------------------------------------
-   *
-   * Expected:
-   *
-   * [ymin, xmin, ymax, xmax]
-   *
-   * Example normalized box:
-   *
-   * [0.10, 0.20, 0.80, 0.90]
-   *
-   * becomes:
-   *
-   * x      = 20%
-   * y      = 10%
-   * width  = 70%
-   * height = 70%
    */
 
   if (Array.isArray(parsed)) {
@@ -18069,234 +17298,73 @@ export const normalizeBoundingBox = (
       return null;
     }
 
-    /*
-     * --------------------------------------------------------
-     * NORMALIZED 0..1 COORDINATES
-     * --------------------------------------------------------
-     */
-
+    // NORMALIZED 0..1 COORDINATES
     if (
-      v1 >= 0 &&
-      v1 <= 1 &&
-      v2 >= 0 &&
-      v2 <= 1 &&
-      v3 >= 0 &&
-      v3 <= 1 &&
-      v4 >= 0 &&
-      v4 <= 1
+      v1 >= 0 && v1 <= 1 &&
+      v2 >= 0 && v2 <= 1 &&
+      v3 >= 0 && v3 <= 1 &&
+      v4 >= 0 && v4 <= 1
     ) {
       const x = v2 * 100;
       const y = v1 * 100;
       const width = (v4 - v2) * 100;
       const height = (v3 - v1) * 100;
 
-      if (
-        width <= 0 ||
-        height <= 0
-      ) {
-        return null;
-      }
-
-      return {
-        x,
-        y,
-        width,
-        height,
-      };
+      return (width > 0 && height > 0) ? { x, y, width, height } : null;
     }
 
-    /*
-     * --------------------------------------------------------
-     * PERCENTAGE COORDINATES 0..100
-     * --------------------------------------------------------
-     *
-     * Example:
-     *
-     * [10, 20, 80, 90]
-     */
-
-    if (
-      v1 >= 0 &&
-      v1 <= 100 &&
-      v2 >= 0 &&
-      v2 <= 100 &&
-      v3 >= 0 &&
-      v3 <= 100 &&
-      v4 >= 0 &&
-      v4 <= 100
-    ) {
-      const x = v2;
-      const y = v1;
-      const width = v4 - v2;
-      const height = v3 - v1;
-
-      if (
-        width <= 0 ||
-        height <= 0
-      ) {
-        return null;
-      }
-
-      return {
-        x,
-        y,
-        width,
-        height,
-      };
-    }
-
-    /*
-     * --------------------------------------------------------
-     * ABSOLUTE PIXEL COORDINATES
-     * --------------------------------------------------------
-     *
-     * Without the original image dimensions, pixel coordinates
-     * cannot be accurately converted into percentages.
-     *
-     * Therefore these values are returned as-is.
-     */
-
+    // PERCENTAGE COORDINATES 0..100
     const x = v2;
     const y = v1;
     const width = v4 - v2;
     const height = v3 - v1;
 
-    if (
-      width <= 0 ||
-      height <= 0
-    ) {
-      return null;
-    }
-
-    return {
-      x,
-      y,
-      width,
-      height,
-    };
+    return (width > 0 && height > 0) ? { x, y, width, height } : null;
   }
 
   /*
    * ----------------------------------------------------------
    * OBJECT FORMAT
    * ----------------------------------------------------------
-   *
-   * Supported:
-   *
-   * { x, y, width, height }
-   *
-   * { xmin, ymin, xmax, ymax }
-   *
-   * { left, top, width, height }
    */
 
   if (
     typeof parsed === "object" &&
     parsed !== null
   ) {
-    const hasXYWH =
-      parsed.x !== undefined &&
-      parsed.y !== undefined &&
-      parsed.width !== undefined &&
-      parsed.height !== undefined;
-
-    const hasMinMax =
-      parsed.xmin !== undefined &&
-      parsed.ymin !== undefined &&
-      parsed.xmax !== undefined &&
-      parsed.ymax !== undefined;
-
-    const hasLTRB =
-      parsed.left !== undefined &&
-      parsed.top !== undefined &&
-      parsed.width !== undefined &&
-      parsed.height !== undefined;
-
     let x: number;
     let y: number;
     let width: number;
     let height: number;
 
-    /*
-     * { x, y, width, height }
-     */
-
-    if (hasXYWH) {
+    // { x, y, width, height }
+    if (parsed.x !== undefined && parsed.width !== undefined) {
       x = Number(parsed.x);
       y = Number(parsed.y);
       width = Number(parsed.width);
       height = Number(parsed.height);
     }
-
-    /*
-     * { xmin, ymin, xmax, ymax }
-     */
-
-    else if (hasMinMax) {
+    // { xmin, ymin, xmax, ymax }
+    else if (parsed.xmin !== undefined && parsed.xmax !== undefined) {
       const xmin = Number(parsed.xmin);
       const ymin = Number(parsed.ymin);
       const xmax = Number(parsed.xmax);
       const ymax = Number(parsed.ymax);
-
       x = xmin;
       y = ymin;
       width = xmax - xmin;
       height = ymax - ymin;
     }
-
-    /*
-     * { left, top, width, height }
-     */
-
-    else if (hasLTRB) {
-      x = Number(parsed.left);
-      y = Number(parsed.top);
-      width = Number(parsed.width);
-      height = Number(parsed.height);
-    }
-
     else {
       return null;
     }
 
-    /*
-     * Validate numbers.
-     */
-
-    if (
-      ![
-        x,
-        y,
-        width,
-        height,
-      ].every(Number.isFinite)
-    ) {
+    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
       return null;
     }
 
-    if (
-      width <= 0 ||
-      height <= 0
-    ) {
-      return null;
-    }
-
-    /*
-     * --------------------------------------------------------
-     * NORMALIZED 0..1 COORDINATES
-     * --------------------------------------------------------
-     */
-
-    if (
-      x >= 0 &&
-      x <= 1 &&
-      y >= 0 &&
-      y <= 1 &&
-      width > 0 &&
-      width <= 1 &&
-      height > 0 &&
-      height <= 1
-    ) {
+    // NORMALIZED 0..1 COORDINATES
+    if (x <= 1 && y <= 1 && width <= 1 && height <= 1) {
       return {
         x: x * 100,
         y: y * 100,
@@ -18305,45 +17373,7 @@ export const normalizeBoundingBox = (
       };
     }
 
-    /*
-     * --------------------------------------------------------
-     * PERCENTAGE COORDINATES 0..100
-     * --------------------------------------------------------
-     */
-
-    if (
-      x >= 0 &&
-      x <= 100 &&
-      y >= 0 &&
-      y <= 100 &&
-      width > 0 &&
-      width <= 100 &&
-      height > 0 &&
-      height <= 100
-    ) {
-      return {
-        x,
-        y,
-        width,
-        height,
-      };
-    }
-
-    /*
-     * --------------------------------------------------------
-     * ABSOLUTE PIXEL COORDINATES
-     * --------------------------------------------------------
-     *
-     * Conversion to percentages requires the original image
-     * dimensions, so return the values unchanged.
-     */
-
-    return {
-      x,
-      y,
-      width,
-      height,
-    };
+    return { x, y, width, height };
   }
 
   return null;

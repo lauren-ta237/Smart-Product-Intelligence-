@@ -1,3 +1,5 @@
+// smart_product_ai_frontend/src/pages/utils.ts
+
 import { BACKEND_ORIGIN } from "../api/config";
 
 export interface BoundingBox {
@@ -50,8 +52,11 @@ export function formatImageUrl(url?: string): string {
   if (!url || url === "null" || url === "undefined" || url === "") {
     return "";
   }
+  
   const normalized = url.trim().replace(/\\/g, "/");
   if (!normalized) return "";
+  
+  // Absolute URLs
   if (
     normalized.startsWith("http://") ||
     normalized.startsWith("https://") ||
@@ -59,7 +64,11 @@ export function formatImageUrl(url?: string): string {
     normalized.startsWith("data:")
   ) return normalized;
 
-  const cleanPath = normalized.replace(/^\/+/, "");
-  const finalPath = cleanPath.startsWith("uploads/") ? cleanPath : `uploads/${cleanPath}`;
-  return `${BACKEND_ORIGIN}/${finalPath}`;
+  // Relative paths from root
+  let cleanPath = normalized;
+  if (!cleanPath.startsWith("/")) {
+    cleanPath = "/" + cleanPath;
+  }
+  
+  return cleanPath;
 }

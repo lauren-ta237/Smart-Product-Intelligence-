@@ -3,22 +3,21 @@ import { getDashboardStats } from "../api/dashboard";
 import { useAuth } from "../store/auth";
 
 /*
-  React Query handles:
-  - loading
-  - caching
-  - refetching
+  React Query hook for dashboard statistics.
+  Modified to prevent unauthorized API calls for visitors or Buyers.
 */
 
 export function useDashboard() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
-  // Only allow fetching if a user session exists and the user is a VENDOR or ADMIN
-  const isAuthorized = !!user && (user.role === "VENDOR" || user.role === "ADMIN");
+  // Logic Change: Only enable the query if a token exists AND the user has sufficient privileges.
+  // This prevents unauthenticated visitors from triggering a 401 and subsequent redirect.
+  const isAuthorized = !!token && !!user && (user.role === "VENDOR" || user.role === "ADMIN");
 
   return useQuery({
     queryKey: ["dashboard"],
     queryFn: getDashboardStats,
-    // 🛑 Stops React Query from calling the endpoint if the user is a guest, buyer, or unauthenticated
+    // 🛑 Strictly stops the query if the user is a guest, buyer, or unauthenticated.
     enabled: isAuthorized,
   });
 }

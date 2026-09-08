@@ -20,7 +20,6 @@ from app.modules.admin.schemas import (
     APIKeyResponse, 
     PriceSuggestionRequest, 
     PriceSuggestionResponse,
-    # 🟢 New Admin Schemas
     AdminCreateRequest,
     AdminUpdateRequest,
     AdminPasswordResetRequest,
@@ -117,13 +116,14 @@ async def get_ai_pipeline_metrics(db: AsyncSession = Depends(get_db)):
 
 @router.post("/price-suggestion", response_model=PriceSuggestionResponse, dependencies=[Depends(verify_admin_role)])
 async def get_price_suggestion(payload: PriceSuggestionRequest, db: AsyncSession = Depends(get_db)):
-    """Suggest price parameters using historical sales averages and quality grade multipliers."""
+    """Suggest price parameters using historical sales averages in FCFA."""
     name_query = payload.product_name.strip()
     grade = payload.grade
 
-    base_min = 1.50
-    base_target = 2.49
-    base_max = 3.99
+    # 🟢 Updated base targets to FCFA (XAF)
+    base_min = 500.0
+    base_target = 1500.0
+    base_max = 5000.0
 
     try:
         stmt = select(func.avg(Product.price)).where(Product.name.ilike(f"%{name_query}%"))
@@ -153,7 +153,7 @@ async def get_price_suggestion(payload: PriceSuggestionRequest, db: AsyncSession
             min_price=min_price,
             target_price=target_price,
             max_price=max_price,
-            suggestion_reason=f"Calculated with grade '{grade}' multiplier ({grade_multiplier}x) based on database average matching '{name_query}'."
+            suggestion_reason=f"Calculated with grade '{grade}' multiplier ({grade_multiplier}x) based on database average matching '{name_query}' in FCFA."
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pricing calculation failed: {str(e)}")
@@ -215,7 +215,6 @@ async def moderate_product(
         raise HTTPException(status_code=500, detail=f"Moderation update failed: {str(e)}")
 
 
-# 🟢 Redesigned /admin/users search endpoint for API Key Owner Selection
 @router.get("/users", dependencies=[Depends(verify_admin_role)])
 async def list_eligible_users(
     q: Optional[str] = None,
@@ -246,7 +245,6 @@ async def list_eligible_users(
     } for u in users]
 
 
-# 🟢 ADMIN MANAGEMENT CRUD ENDPOINTS
 @router.get("/admins", response_model=List[AdminResponse], dependencies=[Depends(verify_admin_role)])
 async def list_admins(db: AsyncSession = Depends(get_db)):
     """Retrieve all administrative Superadmin users in the system."""
@@ -516,8 +514,6 @@ async def toggle_vendor_status(
         raise HTTPException(status_code=500, detail=f"Vendor status override failed: {str(e)}")
 
 
-# --- 🟢 GLOBAL AUDIT LOGS ENDPOINT ---
-
 @router.get("/audit-logs", dependencies=[Depends(verify_admin_role)])
 async def list_audit_logs(db: AsyncSession = Depends(get_db)):
     """Retrieve system security and administrative activity logs."""
@@ -532,8 +528,6 @@ async def list_audit_logs(db: AsyncSession = Depends(get_db)):
         "created_at": log.created_at
     } for log in logs]
 
-
-# --- 🟢 SYSTEM USER CONTROL ENDPOINTS ---
 
 @router.post("/users/{user_id}/promote", dependencies=[Depends(verify_admin_role)])
 async def promote_user_to_admin(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):

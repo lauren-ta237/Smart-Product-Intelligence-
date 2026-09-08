@@ -21,9 +21,6 @@ interface ShippingAddress {
 
 type PaymentMethod = "MTN" | "ORANGE";
 
-// Standard fixed exchange rate: 1 USD ~ 600 XAF (FCFA)
-const USD_TO_XAF = 600;
-
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const user = useAuth((state) => state.user);
@@ -83,23 +80,21 @@ export default function CheckoutPage() {
     });
   };
 
-  // Pricing calculations converted to CFA (FCFA) with moderate/reduced tax
+  // Pricing calculations performed natively in CFA (XAF)
   const pricingBreakdown = useMemo(() => {
-    const subtotalUSD = items.reduce(
+    const subtotal = items.reduce(
       (acc, item) => acc + item.price * item.quantity,
       0
     );
-    const shippingUSD = subtotalUSD > 50 ? 0 : 5.99;
-    
-    // Reduced tax rate from 0.08 (8%) to a moderate 0.01 (1%) or 0
-    const taxUSD = subtotalUSD * 0.01; 
-    const totalUSD = subtotalUSD + shippingUSD + taxUSD;
+    const shippingCost = subtotal > 30000 ? 0 : 2500;
+    const tax = subtotal * 0.01; 
+    const total = subtotal + shippingCost + tax;
 
     return {
-      subtotal: subtotalUSD * USD_TO_XAF,
-      shippingCost: shippingUSD * USD_TO_XAF,
-      tax: taxUSD * USD_TO_XAF,
-      total: totalUSD * USD_TO_XAF,
+      subtotal,
+      shippingCost,
+      tax,
+      total,
     };
   }, [items]);
 
@@ -134,7 +129,7 @@ export default function CheckoutPage() {
 
     setIsSubmitting(true);
     setSubmitStepText(
-      `Verifying ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"} payment credentials...`
+      `Verifying ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"} payment...`
     );
 
     try {
@@ -147,7 +142,7 @@ export default function CheckoutPage() {
           product_id: item.id.startsWith("mock-") ? null : item.id,
           product_name: item.name,
           quantity: item.quantity,
-          price: item.price * USD_TO_XAF,
+          price: item.price,
         })),
         total_price: pricingBreakdown.total,
         payment_method: paymentMethod,
@@ -171,7 +166,7 @@ export default function CheckoutPage() {
       console.error("[PostgreSQL Checkout Syncer Error]:", err);
       setErrorMsg(
         err.response?.data?.detail ||
-          "Checkout synchronization with our ledger failed. Please try again."
+          "Checkout synchronization failed. Please try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -210,9 +205,6 @@ export default function CheckoutPage() {
           <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-16 text-center max-w-lg mx-auto space-y-4">
             <span className="text-5xl block">🛒</span>
             <h2 className="text-xl font-bold">Your Checkout Cart is Empty</h2>
-            <p className="text-slate-400 text-xs leading-relaxed">
-              Add some products to your cart before proceeding here.
-            </p>
             <button
               onClick={() => navigate("/")}
               className="mt-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl tracking-wider uppercase transition-all shadow-lg cursor-pointer"
@@ -224,7 +216,6 @@ export default function CheckoutPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 space-y-6">
               
-              {/* SHIPPING */}
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold flex items-center gap-2.5">
@@ -235,7 +226,7 @@ export default function CheckoutPage() {
                     <button
                       type="button"
                       onClick={() => setActiveStep(1)}
-                      className="text-xs text-emerald-400 font-bold hover:underline"
+                      className="text-xs text-emerald-400 font-bold hover:underline cursor-pointer"
                     >
                       Edit
                     </button>
@@ -320,7 +311,6 @@ export default function CheckoutPage() {
                 )}
               </div>
 
-              {/* PAYMENT */}
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <h3 className="text-lg font-bold flex items-center gap-2.5 border-b border-white/5 pb-4">
                   <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">2</span>
@@ -361,14 +351,14 @@ export default function CheckoutPage() {
                       <p className="font-bold text-slate-200 text-sm">
                         {paymentMethod === "MTN" ? "📱 MTN Mobile Money" : "📱 Orange Money"}
                       </p>
-                      <p className="text-slate-400 text-xs leading-relaxed mt-1">
-                        Enter your phone number below. You will be prompted to authorize the payment.
+                      <p className="text-slate-400 text-xs mt-1">
+                        Enter your phone number. Authorized natively in FCFA.
                       </p>
                     </div>
 
                     <div>
                       <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-                        {paymentMethod === "MTN" ? "MTN Mobile Money Number" : "Orange Money Number"}
+                        Phone Number
                       </label>
                       <input
                         type="tel"
@@ -382,28 +372,27 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* REVIEW */}
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <h3 className="text-lg font-bold flex items-center gap-2.5 border-b border-white/5 pb-4">
                   <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">3</span>
-                  Review Ordered Products
+                  Review Order
                 </h3>
                 <ul className="divide-y divide-white/5">
                   {items.map((item) => (
                     <li key={item.id} className="py-4 flex justify-between items-center text-xs">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-slate-900 border border-white/10 flex items-center justify-center text-lg">
-                          {item.icon ? item.icon : "🥦"}
+                          🥦
                         </div>
                         <div>
                           <p className="font-bold text-white text-sm">{item.name}</p>
                           <p className="text-slate-400 font-mono mt-0.5">
-                            {(item.price * USD_TO_XAF).toLocaleString()} XAF x {item.quantity}
+                            {Math.round(item.price).toLocaleString()} FCFA x {item.quantity}
                           </p>
                         </div>
                       </div>
                       <div className="text-right font-mono font-bold text-slate-200">
-                        {(item.price * USD_TO_XAF * item.quantity).toLocaleString()} XAF
+                        {Math.round(item.price * item.quantity).toLocaleString()} FCFA
                       </div>
                     </li>
                   ))}
@@ -411,28 +400,27 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* SIDEBAR SUMMARY IN CFA */}
             <div className="space-y-6 lg:sticky lg:top-8">
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
-                <h3 className="text-lg font-bold border-b border-white/5 pb-3">Order Pricing Summary</h3>
+                <h3 className="text-lg font-bold border-b border-white/5 pb-3">Pricing Summary</h3>
                 <div className="space-y-2 text-xs font-medium text-slate-400 font-mono">
                   <div className="flex justify-between">
                     <span>Subtotal</span>
-                    <span className="text-slate-200">{pricingBreakdown.subtotal.toLocaleString()} XAF</span>
+                    <span className="text-slate-200">{Math.round(pricingBreakdown.subtotal).toLocaleString()} FCFA</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Shipping fee</span>
                     <span className="text-slate-200">
-                      {pricingBreakdown.shippingCost === 0 ? "FREE" : `${pricingBreakdown.shippingCost.toLocaleString()} XAF`}
+                      {pricingBreakdown.shippingCost === 0 ? "FREE" : `${Math.round(pricingBreakdown.shippingCost).toLocaleString()} FCFA`}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Estimated Tax</span>
-                    <span className="text-slate-200">{pricingBreakdown.tax.toLocaleString()} XAF</span>
+                    <span>Tax</span>
+                    <span className="text-slate-200">{Math.round(pricingBreakdown.tax).toLocaleString()} FCFA</span>
                   </div>
                   <div className="flex justify-between text-base font-bold text-white pt-3 border-t border-white/5 font-sans">
-                    <span className="normal-case">Total Amount</span>
-                    <span className="text-emerald-400 font-black">{pricingBreakdown.total.toLocaleString()} XAF</span>
+                    <span>Total</span>
+                    <span className="text-emerald-400 font-black">{Math.round(pricingBreakdown.total).toLocaleString()} FCFA</span>
                   </div>
                 </div>
 
@@ -440,17 +428,12 @@ export default function CheckoutPage() {
                   type="button"
                   disabled={isSubmitting || items.length === 0}
                   onClick={handlePlaceOrder}
-                  className="w-full mt-4 py-4 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 font-bold text-white rounded-2xl shadow-xl transition-all duration-150 flex items-center justify-center gap-2 border border-emerald-400/20 disabled:border-transparent cursor-pointer"
+                  className="w-full mt-4 py-4 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-800 disabled:opacity-50 font-bold text-white rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></div>
-                      <span className="text-xs tracking-wider uppercase font-extrabold animate-pulse">
-                        {submitStepText || "Completing transaction..."}
-                      </span>
-                    </>
+                    <span className="animate-pulse">{submitStepText || "Processing..."}</span>
                   ) : (
-                    `Pay ${pricingBreakdown.total.toLocaleString()} XAF with ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"}`
+                    `Pay ${Math.round(pricingBreakdown.total).toLocaleString()} FCFA`
                   )}
                 </button>
               </div>
@@ -462,22 +445,19 @@ export default function CheckoutPage() {
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
-          <div className="relative bg-slate-900 border border-white/10 p-8 rounded-3xl max-w-md w-full text-center space-y-6 shadow-2xl z-10 animate-in fade-in zoom-in duration-200">
+          <div className="relative bg-slate-900 border border-white/10 p-8 rounded-3xl max-w-md w-full text-center space-y-6 shadow-2xl z-10">
             <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center text-3xl mx-auto text-emerald-400">
               🎉
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-bold tracking-tight text-white">Purchase Completed Successfully!</h3>
-              <p className="text-slate-400 text-xs leading-relaxed max-w-sm mx-auto">
-                Thank you for your business. Your payment of {pricingBreakdown.total.toLocaleString()} XAF was validated.
+              <h3 className="text-2xl font-bold tracking-tight text-white">Order Successful!</h3>
+              <p className="text-slate-400 text-xs">
+                Your payment of {Math.round(pricingBreakdown.total).toLocaleString()} FCFA was validated.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => {
-                setShowSuccessModal(false);
-                navigate("/");
-              }}
+              onClick={() => navigate("/")}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 font-bold text-white rounded-xl text-xs uppercase tracking-wide cursor-pointer"
             >
               Back to Marketplace
