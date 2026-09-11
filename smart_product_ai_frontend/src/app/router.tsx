@@ -9,26 +9,25 @@ import BuyerOrders from "../app/buyer/orders/page";
 import AdminDashboard from "../pages/AdminDashboard";
 import CheckoutPage from "../pages/CheckoutPage";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
-import { useAuth } from "../store/auth";
-
-// A small helper wrapper for the root route to handle guests vs vendors
-function RootRouteHandler() {
-  const user = useAuth((state) => state.user);
-  const rawRole = user?.role?.toLowerCase() || "";
-
-  // If a vendor is logged in, or if they hit root, ensure they have access or redirect if necessary.
-  // If they are a guest (no user), they can view the buyer marketplace freely.
-  return <Dashboard />;
-}
 
 export default function Router() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Main Marketplace Dashboard - Open to guests/buyers, but protected/tailored inside if needed */}
-        <Route path="/" element={<RootRouteHandler />} />
+        {/* Main Buyer Marketplace - Publicly accessible to guests, buyers, vendors, and admins */}
+        <Route path="/" element={<Dashboard viewMode="buyer" />} />
 
-        {/* Superadmin Dashboard */}
+        {/* Vendor Dashboard - Protected Route restricted to vendors and admins */}
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={["vendor", "admin"]}>
+              <Dashboard viewMode="vendor" />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Superadmin Dashboard - Protected Route restricted to admins */}
         <Route
           path="/admin"
           element={
@@ -62,11 +61,11 @@ export default function Router() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* General Audit/Upload routes */}
+        {/* Vendor Audit/Upload routes */}
         <Route
           path="/review"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={["vendor", "admin"]}>
               <Review />
             </ProtectedRoute>
           }
@@ -75,18 +74,17 @@ export default function Router() {
         <Route
           path="/upload"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={["vendor", "admin"]}>
               <Upload />
             </ProtectedRoute>
           }
         />
 
-        {/* Auxiliary Route Fallbacks for Seamless Experience */}
+        {/* Auxiliary Route Fallbacks */}
         <Route path="/marketplace" element={<Navigate to="/" replace />} />
-        <Route path="/dashboard" element={<Navigate to="/" replace />} />
         <Route path="/orders" element={<Navigate to="/buyer/orders" replace />} />
         <Route path="/wishlist" element={<Navigate to="/" replace />} />
-        
+
         {/* Fallback 404 Route redirecting to root landing page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

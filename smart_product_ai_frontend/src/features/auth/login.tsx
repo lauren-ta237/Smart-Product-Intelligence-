@@ -51,13 +51,18 @@ export default function Login() {
 
       login(token, user);
 
-      const rawRole = user?.role?.toLowerCase() || "";
+      const rawRole = String(user?.role || "").trim().toLowerCase();
 
-      // 🟢 Correct Dashboard Redirect Mapping
+      // Role-Based Post-Login Navigation:
+      // Vendor -> /dashboard
+      // Admin -> /admin
+      // Buyer / default -> /
       if (rawRole === "admin" || rawRole === "superadmin") {
-        navigate("/admin");
+        navigate("/admin", { replace: true });
+      } else if (rawRole === "vendor") {
+        navigate("/dashboard", { replace: true });
       } else {
-        navigate("/");
+        navigate("/", { replace: true });
       }
     } catch (err: any) {
       const rawDetail = err.response?.data?.detail;

@@ -15,7 +15,7 @@ class ProductCreate(BaseModel):
     image_url: Optional[str] = None
     image_id: Optional[UUID] = None
     bounding_box: Optional[Any] = None 
-    approved: bool = False
+    approved: bool = True
     price: Optional[float] = 0.0
     stock_quantity: Optional[int] = 0
     location: Optional[str] = None

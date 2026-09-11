@@ -3,7 +3,9 @@ import { create } from "zustand";
 export interface UserProfile {
   id?: string;
   email?: string;
-  role?: "BUYER" | "VENDOR" | "ADMIN";
+  role?: string;
+  is_verified?: boolean;
+  name?: string;
 }
 
 interface AuthState {

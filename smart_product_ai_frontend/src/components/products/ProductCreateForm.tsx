@@ -26,7 +26,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Clean up browser object URLs to prevent memory leaks
+  // Clean up object URLs to prevent memory leaks
   useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -40,27 +40,26 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // 1. Create immediate local Blob URL for the preview (Problem A fix)
+    // 1. Immediate Local Preview for the UI
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     const localBlob = URL.createObjectURL(file);
     setPreviewUrl(localBlob);
 
-    // 2. Upload to server to get permanent image reference (Problem B fix)
+    // 2. Upload to existing media infrastructure
     setUploadingImage(true);
     setErrorMsg(null);
 
     try {
       const response = await uploadImage(file);
-      // Corrected: Backend MediaResponse returns storage_url, not url
+      // Corrected: Backend returns storage_url, not url
       if (response && response.id) {
         setImageId(response.id);
-        // We capture 'storage_url' which is the relative path (e.g. uploads/abc.jpg)
         setServerImageUrl(response.storage_url);
       }
     } catch (err: any) {
-      setErrorMsg("Failed to sync media to server. Please try again.");
+      setErrorMsg("Failed to upload media asset. Please try another file.");
       setPreviewUrl(null); 
-      console.error("[Manual Upload Error]", err);
+      console.error("[Manual Upload Failure]", err);
     } finally {
       setUploadingImage(false);
     }
@@ -89,17 +88,19 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
         description: description.trim() || undefined,
         price: Number(price),
         stock_quantity: Number(stock),
-        // Send the server-verified image references
         image_id: imageId,
         image_url: serverImageUrl || undefined,
-        approved: false 
+        approved: true
       };
 
       console.log("[ProductCreate] Submitting manual payload:", payload);
 
       await createProduct(payload);
 
-      // Reset form
+      // Notify application of new product insertion
+      window.dispatchEvent(new Event("products:updated"));
+
+      // Reset form on success
       setName("");
       setPrice("");
       setBrand("");
@@ -124,7 +125,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
             <span>📝</span> Manual Product Entry
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Specify your inventory details. Note: SKU and location fields are handled automatically.
+            Fill in the details below. Products are published immediately to the Buyer Marketplace.
           </p>
         </div>
 
@@ -137,7 +138,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
         <form onSubmit={handleFormSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
-            {/* Visuals & Media */}
+            {/* Visual Column */}
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
@@ -153,12 +154,12 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
                     <>
                       <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <span className="bg-slate-900/90 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Replace Image</span>
+                        <span className="bg-slate-900/90 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Change Photo</span>
                       </div>
                       {uploadingImage && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60">
                           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mb-2"></div>
-                          <span className="text-[9px] font-black uppercase tracking-tighter">Syncing...</span>
+                          <span className="text-[9px] font-black uppercase">Syncing...</span>
                         </div>
                       )}
                     </>
@@ -166,7 +167,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
                     <>
                       <span className="text-3xl mb-2">{uploadingImage ? '⏳' : '📷'}</span>
                       <span className="text-[10px] font-bold uppercase text-slate-400">
-                        {uploadingImage ? 'Uploading Media...' : 'Click to Upload Image'}
+                        {uploadingImage ? 'Uploading...' : 'Click to Upload Image'}
                       </span>
                     </>
                   )}
@@ -194,7 +195,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
               </div>
             </div>
 
-            {/* Data Inputs */}
+            {/* Attributes Column */}
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
@@ -258,7 +259,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
                   type="text"
                   value={brand}
                   onChange={(e) => setBrand(e.target.value)}
-                  placeholder="Local Craft"
+                  placeholder="e.g. Local Craft"
                   className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500/50"
                 />
               </div>
@@ -271,7 +272,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
               disabled={isCreating || uploadingImage}
               className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-900/20 cursor-pointer"
             >
-              {isCreating ? "Saving to Database..." : "Confirm Listing"}
+              {isCreating ? "Finalizing Listing..." : "Confirm Listing"}
             </button>
             
             <button

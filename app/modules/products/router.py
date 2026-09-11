@@ -85,6 +85,7 @@ def extract_vendor_context(vendor: Any) -> tuple[Optional[UUID], bool]:
 async def list_products(
     db: AsyncSession = Depends(get_db),
     vendor=Depends(get_current_vendor_optional),
+    vendor_id: Optional[UUID] = Query(None),
     category: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
     approved: Optional[bool] = Query(None),
@@ -95,36 +96,14 @@ async def list_products(
     """
     Retrieves products.
 
-    Guests/buyers receive all products (previously only approved).
-    Vendors receive their own products.
-    Admins can see all products.
+    Products do not require admin approval before being shown to buyers.
+    When vendor_id query parameter is provided, filters to that vendor.
+    Otherwise, returns products for the public marketplace.
     """
-
     service = ProductCRUDService(db)
 
-    vendor_id, is_admin = extract_vendor_context(vendor)
-
-    # Guest / buyer branch
-    if not vendor_id:
-        # Changed: approved=approved instead of approved=True
-        # This allows buyers to see unapproved products by default.
-        items, _ = await service.list_products(
-            vendor_id=None,
-            category=category,
-            brand=brand,
-            approved=approved,
-            search_query=q,
-            page=page,
-            size=size,
-        )
-
-        return items
-
-    # Admin can see all vendors.
-    scoped_vendor_id = None if is_admin else vendor_id
-
     items, _ = await service.list_products(
-        vendor_id=scoped_vendor_id,
+        vendor_id=vendor_id,
         category=category,
         brand=brand,
         approved=approved,
@@ -349,17 +328,7 @@ async def get_product(
             detail="Product record not found.",
         )
 
-    # Unapproved products are only visible to their owner/admin.
-    if (
-        not product.approved
-        and not is_admin
-        and product.vendor_id != vendor_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view this unapproved product.",
-        )
-
+    # Products are viewable in the marketplace without admin approval gating.
     return product
 
 
