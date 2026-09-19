@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useProducts } from "../../hooks/useProducts";
+import { useParams } from "react-router-dom";
+import { useProductDetail, useProducts } from "../../hooks/useProducts";
 import { uploadImage } from "../../api/images";
 
 interface ProductCreateFormProps {
@@ -8,7 +9,10 @@ interface ProductCreateFormProps {
 }
 
 export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreateFormProps) {
-  const { createProduct, isCreating } = useProducts();
+  const { productId } = useParams();
+  const isEdit = Boolean(productId);
+  const { createProduct, updateProduct, isCreating, isUpdating } = useProducts();
+  const { data: existingProduct } = useProductDetail(productId || "");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form Field States
@@ -25,6 +29,19 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!existingProduct) return;
+    setName(existingProduct.name);
+    setBrand(existingProduct.brand || "");
+    setCategory(existingProduct.category || "General");
+    setDescription(existingProduct.description || "");
+    setPrice(existingProduct.price ?? "");
+    setStock(existingProduct.stock_quantity ?? 1);
+    setImageId(existingProduct.image_id);
+    setServerImageUrl(existingProduct.image_url || "");
+    setPreviewUrl(existingProduct.image_url || null);
+  }, [existingProduct]);
 
   // Clean up object URLs to prevent memory leaks
   useEffect(() => {
@@ -95,7 +112,11 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
 
       console.log("[ProductCreate] Submitting manual payload:", payload);
 
-      await createProduct(payload);
+      if (isEdit && productId) {
+        await updateProduct(productId, payload);
+      } else {
+        await createProduct(payload);
+      }
 
       // Notify application of new product insertion
       window.dispatchEvent(new Event("products:updated"));
@@ -122,7 +143,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
       <div className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl text-slate-200">
         <div className="border-b border-white/10 pb-4 mb-6">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>📝</span> Manual Product Entry
+            <span>📝</span> {isEdit ? "Edit Product" : "Manual Product Entry"}
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             Fill in the details below. Products are published immediately to the Buyer Marketplace.
@@ -269,10 +290,10 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
           <div className="flex gap-4 pt-6 border-t border-white/10">
             <button
               type="submit"
-              disabled={isCreating || uploadingImage}
+              disabled={isCreating || isUpdating || uploadingImage}
               className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-900/20 cursor-pointer"
             >
-              {isCreating ? "Finalizing Listing..." : "Confirm Listing"}
+              {isCreating || isUpdating ? "Saving..." : isEdit ? "Save Changes" : "Confirm Listing"}
             </button>
             
             <button

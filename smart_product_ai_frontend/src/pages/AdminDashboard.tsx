@@ -1,9 +1,14 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/client";
+import { formatImageUrl } from "../api/imageUtils";
 import { useNavigate } from "react-router-dom";
 
 // Types
+interface AdminDashboardProps {
+  initialTab?: "overview" | "moderation" | "vendors" | "developers" | "orders" | "admins";
+}
+
 interface PlatformStats {
   total_revenue: number;
   active_vendors: number;
@@ -29,7 +34,38 @@ interface ModerationProduct {
   price: number;
   stock_quantity: number;
   image_url?: string;
+  bounding_box?: unknown;
   approved: boolean;
+}
+
+function getProductImageStyle(box: any): React.CSSProperties {
+  if (!box || Object.keys(box).length === 0) {
+    return { width: "100%", height: "100%", objectFit: "cover", position: "relative" };
+  }
+
+  const isSingleItem =
+    box.is_single_item === true ||
+    box.detection_type === "single" ||
+    ("width" in box && "height" in box && Number(box.width) >= 0.98 && Number(box.height) >= 0.98) ||
+    ("xmax" in box && "xmin" in box && "ymax" in box && "ymin" in box && Number(box.xmax) - Number(box.xmin) >= 0.98 && Number(box.ymax) - Number(box.ymin) >= 0.98) ||
+    ("x" in box && "y" in box && Number(box.x) <= 0.05 && Number(box.y) <= 0.05 && Number(box.width) >= 0.9 && Number(box.height) >= 0.9);
+
+  if (isSingleItem) {
+    return { width: "100%", height: "100%", objectFit: "contain", position: "relative" };
+  }
+
+  if ("width" in box && "height" in box && "x" in box && "y" in box && Number(box.width) > 0 && Number(box.height) > 0) {
+    return {
+      position: "absolute",
+      maxWidth: "none",
+      width: `${100 / Number(box.width)}%`,
+      height: `${100 / Number(box.height)}%`,
+      left: `${-(Number(box.x) / Number(box.width)) * 100}%`,
+      top: `${-(Number(box.y) / Number(box.height)) * 100}%`,
+    };
+  }
+
+  return { width: "100%", height: "100%", objectFit: "cover" };
 }
 
 interface DeveloperKey {
@@ -82,12 +118,12 @@ interface RegisteredAdmin {
   created_at: string;
 }
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ initialTab = "overview" }: AdminDashboardProps) {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<
     "overview" | "moderation" | "vendors" | "developers" | "orders" | "admins"
-  >("overview");
+  >(initialTab);
 
   // State
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -473,16 +509,19 @@ export default function AdminDashboard() {
         {/* TAB CONTROLS */}
         <div className="flex flex-wrap items-center bg-white/[0.03] border border-white/5 p-2 rounded-2xl gap-2 text-xs font-semibold font-mono">
           {[
-            { id: "overview", label: "📊 Analytics & AI" },
-            { id: "moderation", label: "🛡️ Moderation" },
-            { id: "vendors", label: "🏬 Vendors" },
-            { id: "developers", label: "🔌 API Keys" },
-            { id: "admins", label: "👥 Administrators" },
-            { id: "orders", label: "🛒 Order Logs" },
+            { id: "overview", label: "📊 Analytics & AI", path: "/admin" },
+            { id: "moderation", label: "🛡️ Moderation", path: "/admin/products" },
+            { id: "vendors", label: "🏬 Vendors", path: "/admin/vendors" },
+            { id: "developers", label: "🔌 API Keys", path: "/admin/api-keys" },
+            { id: "admins", label: "👥 Administrators", path: "/admin/users" },
+            { id: "orders", label: "🛒 Order Logs", path: "/admin/orders" },
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                navigate(tab.path);
+              }}
               className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
                 activeTab === tab.id
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10"
@@ -770,21 +809,21 @@ export default function AdminDashboard() {
                       <td className="py-4 px-4">
 
                         {p.image_url && (
-                          <img
-                            src={p.image_url}
-                            alt={p.name}
-                            className="w-10 h-10 object-cover rounded-md inline-block mr-2"
-                            onError={(e) => {
-                              (
-                                e.target as HTMLImageElement
-                              ).src =
-                                "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80";
-                            }}
-                          />
+                          <span className="relative inline-flex w-10 h-10 mr-2 align-middle overflow-hidden rounded-md bg-slate-950">
+                            <img
+                              src={formatImageUrl(p.image_url)}
+                              alt={p.name}
+                              className="max-w-none absolute"
+                              style={getProductImageStyle(p.bounding_box)}
+                              onError={(event) => {
+                                event.currentTarget.style.display = "none";
+                              }}
+                            />
+                          </span>
                         )}
 
                         <span className="font-mono text-emerald-400 font-bold">
-                          ${p.price?.toFixed(2)}
+                          {Math.round(p.price ?? 0).toLocaleString()} FCFA
                         </span>
 
                       </td>

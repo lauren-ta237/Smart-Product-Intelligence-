@@ -14,7 +14,9 @@ from app.modules.catalog.wishlist_router import router as wishlist_router
 
 api_router = APIRouter()
 
-api_router.include_router(wishlist_router, prefix="/api/v1")
+# The application mounts this router at /api/v1, so child routers must not
+# repeat the version prefix.
+api_router.include_router(wishlist_router)
 # TASK 4: Ensure specific routes are registered before generic ones to prevent path conflicts.
 api_router.include_router(orders_router)
 
@@ -24,7 +26,10 @@ api_router.include_router(user.router)
 
 # 2. Media & AI
 api_router.include_router(media_router)
-api_router.include_router(intelligence_router)
+api_router.include_router(intelligence_router, prefix="/ai")
+# Keep the previous analysis URLs available while exposing the canonical AI
+# namespace required by the public API structure.
+api_router.include_router(intelligence_router, prefix="/analysis")
 
 # 3. Products & Catalog
 api_router.include_router(products_router)

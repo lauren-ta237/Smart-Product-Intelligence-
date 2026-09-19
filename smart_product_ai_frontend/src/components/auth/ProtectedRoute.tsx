@@ -53,8 +53,11 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
       if ((userRole === "admin" || userRole === "superadmin") && location.pathname !== "/admin") {
         return <Navigate to="/admin" replace />;
       }
-      if (userRole === "vendor" && location.pathname !== "/dashboard") {
-        return <Navigate to="/dashboard" replace />;
+      if (userRole === "vendor" && !location.pathname.startsWith("/vendor/")) {
+        return <Navigate to="/vendor/dashboard" replace />;
+      }
+      if (userRole === "buyer" || userRole === "customer") {
+        return <Navigate to="/buyer" replace />;
       }
       return <Navigate to="/" replace />;
     }

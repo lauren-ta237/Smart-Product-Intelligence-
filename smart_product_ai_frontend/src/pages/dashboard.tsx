@@ -64,6 +64,7 @@ export interface CartItem extends ProduceItem {
 
 export interface DashboardProps {
   viewMode?: "buyer" | "vendor";
+  initialVendorSection?: "overview" | "upload" | "catalog" | "orders" | "developer";
 }
 
 interface MarketplaceHeaderProps {
@@ -196,7 +197,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
       <div className="flex items-center gap-3 ml-auto">
         {isVendorUser && (
           <Link
-            to="/dashboard"
+            to="/vendor/dashboard"
             className="bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 shadow-sm cursor-pointer"
           >
             <span>🏪</span>
@@ -256,7 +257,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
 
 // --- DASHBOARD COMPONENT ---
 
-export default function Dashboard({ viewMode }: DashboardProps = {}) {
+export default function Dashboard({ viewMode, initialVendorSection = "overview" }: DashboardProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -275,10 +276,19 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
   // Vendor dashboard sections
   const [vendorActiveSection, setVendorActiveSection] = useState<
     "overview" | "upload" | "catalog" | "orders" | "developer"
-  >("overview");
+  >(initialVendorSection);
+
+  const vendorSectionPaths = {
+    overview: "/vendor/dashboard",
+    upload: "/vendor/upload",
+    catalog: "/vendor/products",
+    orders: "/vendor/orders",
+    developer: "/vendor/apiKeys",
+  } as const;
 
   const [activeTab, setActiveTab] = useState<"marketplace" | "activity">(
     location.pathname.includes("wishlist") ||
+      location.pathname.includes("profile") ||
       location.pathname.includes("activity")
       ? "activity"
       : "marketplace"
@@ -304,11 +314,11 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
 
   // Strict architectural separation between Buyer Marketplace (/) and Vendor Dashboard (/dashboard):
   // - If viewMode is explicitly "buyer" or path is exactly "/", it is ALWAYS Buyer Marketplace.
-  // - If viewMode is explicitly "vendor" or path is "/dashboard", it renders Vendor Dashboard.
+  // - If viewMode is explicitly "vendor" or path is under "/vendor", it renders Vendor Dashboard.
   const isVendorView =
     viewMode === "vendor" ||
     (viewMode !== "buyer" &&
-      location.pathname.startsWith("/dashboard") &&
+      location.pathname.startsWith("/vendor/") &&
       isVendorRole);
 
   const isVerified = Boolean(user?.is_verified);
@@ -339,6 +349,12 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
       0
     );
   }, [cartItems]);
+
+  useEffect(() => {
+    if (location.pathname === "/buyer/cart") {
+      setCartOpen(true);
+    }
+  }, [location.pathname]);
 
   // ---------------------------------------------------------
   // IMAGE CROPPING STYLE RESOLVER
@@ -474,9 +490,7 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
     try {
       setLoading(true);
 
-      // Business Rule: Products do not require admin approval before being shown to buyers.
-      // Call canonical backend endpoint without approved=true filter.
-      const data = await getProducts({});
+      const data = await getProducts({ approved: true });
 
       const rawProducts: RawProduct[] = Array.isArray(data)
         ? data
@@ -564,7 +578,7 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
 
   const handleProceedToCheckout = () => {
     setCartOpen(false);
-    navigate("/checkout");
+    navigate("/buyer/checkout");
   };
 
   // ---------------------------------------------------------
@@ -688,9 +702,10 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() =>
-                      setVendorActiveSection(item.id)
-                    }
+                    onClick={() => {
+                      setVendorActiveSection(item.id);
+                      navigate(vendorSectionPaths[item.id]);
+                    }}
                     className={`flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-wide transition-all cursor-pointer ${
                       vendorActiveSection === item.id
                         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/40"
@@ -777,9 +792,10 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                     <button
                       type="button"
-                      onClick={() =>
-                        setVendorActiveSection("upload")
-                      }
+                      onClick={() => {
+                        setVendorActiveSection("upload");
+                        navigate(vendorSectionPaths.upload);
+                      }}
                       className="p-5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/15 text-left transition-all cursor-pointer"
                     >
                       <span className="text-2xl">✨</span>
@@ -795,9 +811,10 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setVendorActiveSection("catalog")
-                      }
+                      onClick={() => {
+                        setVendorActiveSection("catalog");
+                        navigate(vendorSectionPaths.catalog);
+                      }}
                       className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 text-left transition-all cursor-pointer"
                     >
                       <span className="text-2xl">📦</span>
@@ -813,9 +830,10 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setVendorActiveSection("orders")
-                      }
+                      onClick={() => {
+                        setVendorActiveSection("orders");
+                        navigate(vendorSectionPaths.orders);
+                      }}
                       className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/15 text-left transition-all cursor-pointer"
                     >
                       <span className="text-2xl">🚚</span>
@@ -831,9 +849,10 @@ export default function Dashboard({ viewMode }: DashboardProps = {}) {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setVendorActiveSection("developer")
-                      }
+                      onClick={() => {
+                        setVendorActiveSection("developer");
+                        navigate(vendorSectionPaths.developer);
+                      }}
                       className="p-5 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/15 text-left transition-all cursor-pointer"
                     >
                       <span className="text-2xl">🔑</span>

@@ -18,7 +18,7 @@ const websocketOrigin = BACKEND_ORIGIN
     : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 const socket =
 new WebSocket(
-`${websocketOrigin}/api/v1/ws/analysis/${analysisId}`
+`${websocketOrigin}/api/v1/ai/ws/${analysisId}`
 );
 socket.onmessage =
 (event)=>{

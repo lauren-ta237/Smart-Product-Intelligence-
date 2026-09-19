@@ -35,7 +35,8 @@ router = APIRouter(
 
 async def verify_admin_role(current_user: User = Depends(get_current_user)):
     """Security dependency to restrict endpoints to authorized superadmins."""
-    if current_user.role != UserRole.ADMIN:
+    role_value = getattr(current_user.role, "value", current_user.role)
+    if str(role_value).strip().upper() != UserRole.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Superadmin role privileges are required to access this portal."
@@ -178,6 +179,7 @@ async def list_moderation_products(db: AsyncSession = Depends(get_db)):
             "price": p.price,
             "stock_quantity": p.stock_quantity,
             "image_url": p.image_url,
+            "bounding_box": p.bounding_box,
             "approved": p.approved
         })
     return response

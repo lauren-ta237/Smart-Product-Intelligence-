@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios, { AxiosError } from "axios";
+import { api } from "../api/client";
 
 // 1. Define explicit interfaces for your cart items and payload
 export interface CartItem {
@@ -125,7 +126,7 @@ export const CheckoutComponent = () => {
       };
 
       // 3. Send payload to FastAPI backend
-      await axios.post("/orders", orderPayload);
+      await api.post("/orders", orderPayload);
 
       checkout(); // Clear cart and trigger success state
       setStep("success");

@@ -54,15 +54,15 @@ export default function Login() {
       const rawRole = String(user?.role || "").trim().toLowerCase();
 
       // Role-Based Post-Login Navigation:
-      // Vendor -> /dashboard
+      // Vendor -> vendor area
       // Admin -> /admin
       // Buyer / default -> /
       if (rawRole === "admin" || rawRole === "superadmin") {
         navigate("/admin", { replace: true });
       } else if (rawRole === "vendor") {
-        navigate("/dashboard", { replace: true });
+        navigate("/vendor/dashboard", { replace: true });
       } else {
-        navigate("/", { replace: true });
+        navigate("/buyer", { replace: true });
       }
     } catch (err: any) {
       const rawDetail = err.response?.data?.detail;

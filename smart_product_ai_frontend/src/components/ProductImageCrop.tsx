@@ -21,6 +21,7 @@ export default function ProductImageCrop({
   alt = "Product",
   className = "",
 }: Props) {
+  const [imageFailed, setImageFailed] = React.useState(false);
   const src = formatImageUrl(imageUrl);
 
   const box = useMemo(() => {
@@ -31,7 +32,7 @@ export default function ProductImageCrop({
    * No usable bounding box:
    * display the original image normally.
    */
-  if (!src || !box || box.width <= 0 || box.height <= 0) {
+  if (!src || imageFailed || !box || box.width <= 0 || box.height <= 0) {
     return (
       <div
         className={`relative overflow-hidden bg-slate-950 ${className}`}
@@ -42,7 +43,7 @@ export default function ProductImageCrop({
             alt={alt}
             className="w-full h-full object-contain"
             onError={(e) => {
-              e.currentTarget.style.display = "none";
+              setImageFailed(true);
             }}
           />
         ) : (
@@ -88,7 +89,7 @@ export default function ProductImageCrop({
           top: `${top}%`,
         }}
         onError={(e) => {
-          e.currentTarget.style.display = "none";
+          setImageFailed(true);
         }}
       />
     </div>

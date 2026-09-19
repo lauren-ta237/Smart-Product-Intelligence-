@@ -3,7 +3,7 @@ import { api } from "./client";
 
 /**
  * Starts AI processing after upload.
- * 🟢 Fixed: Path simplified to "/analysis/..."
+ * AI endpoints are exposed under the canonical /ai namespace.
  */
 export async function startAnalysis(imageId: string) {
   if (!imageId || imageId === "undefined") {
@@ -11,7 +11,7 @@ export async function startAnalysis(imageId: string) {
     throw new Error("Invalid Image ID provided.");
   }
   
-  const res = await api.post(`/analysis/start/${imageId}`);
+  const res = await api.post(`/ai/start/${imageId}`);
   return res.data;
 }
 
@@ -24,7 +24,7 @@ export async function getAnalysis(analysisId: string) {
     throw new Error("Invalid Analysis ID provided.");
   }
 
-  const response = await api.get(`/analysis/${analysisId}`);
+  const response = await api.get(`/ai/${analysisId}`);
   return response.data;
 }
 
@@ -37,6 +37,6 @@ export async function getDetectedProducts(analysisId: string) {
     throw new Error("Invalid Analysis ID provided.");
   }
 
-  const response = await api.get(`/analysis/${analysisId}/products`);
+  const response = await api.get(`/ai/${analysisId}/products`);
   return response.data;
 }

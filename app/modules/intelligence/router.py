@@ -32,7 +32,7 @@ from .websocket_manager import ws_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/analysis",
+    prefix="",
     tags=["AI Analysis"]
 )
 

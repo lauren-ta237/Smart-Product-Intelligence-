@@ -38,7 +38,7 @@ export default function ProductEditor({ product }: Props) {
       });
 
       if (response.status === 200 || response.status === 201) {
-        navigate("/review");
+        navigate("/vendor/ai/review");
       }
     } catch (error) {
       console.error("Presentation target sync missing:", error);

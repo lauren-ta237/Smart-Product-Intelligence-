@@ -187,7 +187,7 @@ export default function CheckoutPage() {
             </p>
           </div>
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/buyer")}
             className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
           >
             ← Keep Shopping
@@ -206,7 +206,7 @@ export default function CheckoutPage() {
             <span className="text-5xl block">🛒</span>
             <h2 className="text-xl font-bold">Your Checkout Cart is Empty</h2>
             <button
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/buyer")}
               className="mt-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl tracking-wider uppercase transition-all shadow-lg cursor-pointer"
             >
               Browse Catalog
@@ -457,7 +457,7 @@ export default function CheckoutPage() {
             </div>
             <button
               type="button"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/buyer")}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 font-bold text-white rounded-xl text-xs uppercase tracking-wide cursor-pointer"
             >
               Back to Marketplace

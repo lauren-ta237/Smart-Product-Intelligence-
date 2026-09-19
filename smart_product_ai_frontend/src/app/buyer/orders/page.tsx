@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getBuyerOrders } from "../../../api/orders";
 import { useAuth } from "../../../store/auth";
 import VendorOrders from "../../../components/vendor/VendorOrders";
@@ -23,12 +23,17 @@ interface BuyerOrder {
 
 export default function BuyerOrders() {
   const navigate = useNavigate();
+  const { orderId } = useParams();
   const { user } = useAuth();
 
   const isVendor = user?.role?.toLowerCase() === "vendor";
 
   const [orders, setOrders] = useState<BuyerOrder[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const visibleOrders = orderId
+    ? orders.filter((order) => String(order.id) === orderId)
+    : orders;
 
   const fetchBuyerOrders = async () => {
     try {
@@ -90,7 +95,7 @@ export default function BuyerOrders() {
             </div>
 
             <button
-              onClick={() => navigate("/")}
+              onClick={() => navigate(isVendor ? "/vendor/dashboard" : "/buyer")}
               className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10 cursor-pointer"
             >
               Back to Dashboard
@@ -125,7 +130,7 @@ export default function BuyerOrders() {
           </div>
 
           <button
-            onClick={() => navigate("/")}
+              onClick={() => navigate("/buyer")}
             className="bg-white/5 px-6 py-2.5 rounded-xl text-xs font-black uppercase border border-white/10 cursor-pointer"
           >
             Back to Market
@@ -133,12 +138,12 @@ export default function BuyerOrders() {
         </header>
 
         <div className="space-y-8">
-          {orders.length === 0 ? (
+          {visibleOrders.length === 0 ? (
             <p className="text-center py-20 text-slate-600 text-xs font-bold">
               No shipments found in ledger.
             </p>
           ) : (
-            orders.map((order) => (
+            visibleOrders.map((order) => (
               <div
                 key={order.id}
                 className="bg-white/[0.02] border border-white/10 rounded-3xl p-8 space-y-6 shadow-2xl"
