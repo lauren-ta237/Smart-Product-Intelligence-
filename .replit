@@ -36,7 +36,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+args = "cd apps/api && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 waitForPort = 8000
 
 [workflows.workflow.metadata]
@@ -48,7 +48,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd smart_product_ai_frontend && npm run dev -- --host 0.0.0.0 --port 5000"
+args = "cd apps/web && npm run dev -- --host 0.0.0.0 --port 5000"
 waitForPort = 5000
 
 [workflows.workflow.metadata]

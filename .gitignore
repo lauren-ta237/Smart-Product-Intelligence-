@@ -13,6 +13,8 @@ env/
 # Environment variables (contains secrets)
 .env
 .env.*
+!.env.example
+!apps/*/.env.example
 
 # VS Code
 .vscode/
