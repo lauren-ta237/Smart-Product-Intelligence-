@@ -7,14 +7,14 @@ import { useAuth } from "../store/auth";
 interface Product {
   id: string | number;
   name?: string;
-  category?: string;
-  brand?: string;
-  price?: number | string;
+  category?: string | null;
+  brand?: string | null;
+  price?: number | string | null;
   suggested_price?: number | string;
   unit_price?: number | string;
-  image_url?: string;
+  image_url?: string | null;
   imageUrl?: string;
-  stock_quantity?: number;
+  stock_quantity?: number | null;
 }
 
 export default function ProductDetails() {

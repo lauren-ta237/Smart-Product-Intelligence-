@@ -113,7 +113,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
       console.log("[ProductCreate] Submitting manual payload:", payload);
 
       if (isEdit && productId) {
-        await updateProduct(productId, payload);
+        await updateProduct({ id: productId, data: payload });
       } else {
         await createProduct(payload);
       }
