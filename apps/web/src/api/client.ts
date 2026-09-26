@@ -3,12 +3,16 @@ import axios from "axios";
 import { API_BASE_URL } from "./config";
 
 /*
- Central HTTP client.
- All frontend requests go through here.
- 🟢 The baseURL includes the version prefix /v1.
+  Central HTTP client.
+  All frontend requests go through here.
+  🟢 Automatically handles and normalizes the version prefix /api/v1.
 */
+const rawApiUrl = import.meta.env.VITE_API_URL || API_BASE_URL;
+const normalizedBase = rawApiUrl.endsWith("/") ? rawApiUrl.slice(0, -1) : rawApiUrl;
+const baseURL = normalizedBase.includes("/api/v1") ? normalizedBase : `${normalizedBase}/api/v1`;
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || API_BASE_URL,
+  baseURL,
   timeout: 60000,
   headers: {
     "Content-Type": "application/json"
@@ -16,8 +20,8 @@ export const api = axios.create({
 });
 
 /*
- Attach access token automatically.
- Every protected request gets: Authorization: Bearer TOKEN
+  Attach access token automatically.
+  Every protected request gets: Authorization: Bearer TOKEN
 */
 api.interceptors.request.use(
   (config) => {
@@ -42,8 +46,8 @@ api.interceptors.request.use(
 );
 
 /*
- Global response handler.
- Handles expired tokens and auth failures gracefully.
+  Global response handler.
+  Handles expired tokens and auth failures gracefully.
 */
 api.interceptors.response.use(
   (response) => response,
