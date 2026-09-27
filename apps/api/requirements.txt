@@ -4,8 +4,9 @@ uvicorn
 sqlalchemy
 asyncpg
 alembic
-sqlalchemy[asyncio]
+sqlalchemy[asyncio]sqlalchemy[asyncio]
 greenlet
+Pillow
 
 pydantic
 pydantic-settings
