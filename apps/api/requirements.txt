@@ -21,4 +21,4 @@ rapidfuzz
 pytest
 pytest-asyncio
 Pillow
-boto3
+supabase
