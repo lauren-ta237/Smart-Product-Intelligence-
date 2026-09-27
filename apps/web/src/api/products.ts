@@ -35,7 +35,7 @@ export async function createProduct(data: ProductInput): Promise<Product> {
  */
 export async function updateProduct(
   id: string,
-  data: Partial<ProductInput>
+  data: Partial<Product>
 ): Promise<Product> {
   const response = await api.patch(`/products/${id}`, data);
   return response.data;

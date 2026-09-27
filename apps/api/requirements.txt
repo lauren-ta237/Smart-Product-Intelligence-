@@ -21,3 +21,4 @@ rapidfuzz
 pytest
 pytest-asyncio
 Pillow
+boto3

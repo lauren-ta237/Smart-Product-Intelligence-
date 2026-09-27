@@ -7,12 +7,8 @@ import { API_BASE_URL } from "./config";
   All frontend requests go through here.
   🟢 Automatically handles and normalizes the version prefix /api/v1.
 */
-const rawApiUrl = import.meta.env.VITE_API_URL || API_BASE_URL;
-const normalizedBase = rawApiUrl.endsWith("/") ? rawApiUrl.slice(0, -1) : rawApiUrl;
-const baseURL = normalizedBase.includes("/api/v1") ? normalizedBase : `${normalizedBase}/api/v1`;
-
 export const api = axios.create({
-  baseURL,
+  baseURL: API_BASE_URL,
   timeout: 60000,
   headers: {
     "Content-Type": "application/json"
