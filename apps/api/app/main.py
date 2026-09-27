@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.router import api_router
@@ -16,13 +15,8 @@ from app.core.logging import setup_logging
 # Load environmental configurations explicitly 
 load_dotenv()
 
-# Ensure uploads directory exists BEFORE mounting StaticFiles at module load time
-os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Auto-create local file storage folder to ensure directory exists across all platforms
-    os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
     # Automatically checks your Postgres instance and builds tables if missing
     await init_db()
     try:
@@ -62,9 +56,6 @@ async def value_error_handler(request: Request, exc: ValueError):
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"detail": str(exc)},
     )
-
-# Mount static asset disk space natively for uploaded files
-app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
 
 setup_logging()
 
