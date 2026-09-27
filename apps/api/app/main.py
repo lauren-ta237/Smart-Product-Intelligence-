@@ -1,11 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
-import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.database import init_db
