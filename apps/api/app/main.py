@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
@@ -15,8 +16,11 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Automatically checks your Postgres instance and builds tables if missing
-    await init_db()
+    # Skip automatic DDL / table creation on Vercel serverless environment 
+    # to avoid read-only or resource busy errors.
+    if not os.getenv("VERCEL"):
+        await init_db()
+        
     try:
         yield
     except asyncio.CancelledError:
