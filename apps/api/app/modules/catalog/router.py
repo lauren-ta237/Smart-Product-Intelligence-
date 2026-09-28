@@ -62,25 +62,24 @@ async def get_all_products(
     db: AsyncSession = Depends(get_db),
     vendor=Depends(get_current_vendor_optional),
 ):
-    """
-    Fetches vendor-scoped products for the frontend review dashboard.
-    Handles requests with or without trailing slashes.
-    """
-    if not vendor:
-        return []
-
-    vendor_id = vendor.id if hasattr(vendor, "id") else vendor
-
     try:
-        stmt = select(Product).where(Product.vendor_id == vendor_id)
+        # If vendor is optional, handle both cases safely
+        vendor_id = getattr(vendor, "id", vendor) if vendor else None
+        
+        stmt = select(Product)
+        if vendor_id:
+            stmt = stmt.where(Product.vendor_id == vendor_id)
+            
         result = await db.execute(stmt)
         return result.scalars().all()
 
     except Exception as e:
-        traceback.print_exc()
+        import traceback
+        err_msg = traceback.format_exc()
+        print(err_msg) # Force print to stdout
         raise HTTPException(
             status_code=500,
-            detail=f"Database fetch failed: {str(e)}"
+            detail=f"CRASH DETAILS: {str(e)} | Trace: {err_msg}"
         )
 
 
