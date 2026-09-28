@@ -31,9 +31,10 @@ api_router.include_router(intelligence_router, prefix="/ai")
 # namespace required by the public API structure.
 api_router.include_router(intelligence_router, prefix="/analysis")
 
-# 3. Products & Catalog
+## 3. Products & Catalog
 api_router.include_router(products_router)
-api_router.include_router(catalog_router, prefix="/inventory", tags=["Catalog"])
+# Remove prefix="/inventory" so it mounts cleanly at /api/v1/products
+api_router.include_router(catalog_router, prefix="", tags=["Catalog"])
 
 # 5. Dashboard & Admin
 api_router.include_router(dashboard.router)
