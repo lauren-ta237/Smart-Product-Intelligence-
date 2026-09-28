@@ -34,18 +34,26 @@ app = FastAPI(
     lifespan=lifespan 
 )
 
+# Safely parse allowed frontend origins from settings or environment
+frontend_urls = getattr(settings, "FRONTEND_URL", "") or os.getenv("FRONTEND_URL", "")
+extra_origins = [origin.strip() for origin in frontend_urls.split(",") if origin.strip()]
+
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://*.vercel.app",  # Fallback wildcard concept if supported or explicit domains below
+    *extra_origins,
+]
+
 # Configure strict Cross-Origin Resource Sharing (CORS) boundaries
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        *[origin.strip() for origin in settings.FRONTEND_URL.split(",") if origin.strip()],
-    ],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app", # Automatically allows all Vercel deployment preview and production URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
