@@ -8,15 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/api/v1/(.*)",
-      "dest": "apps/api/index.py"
-    },
-    {
-      "src": "/health",
-      "dest": "apps/api/index.py"
-    },
-    {
-      "src": "/docs",
+      "src": "/(.*)",
       "dest": "apps/api/index.py"
     }
   ]
