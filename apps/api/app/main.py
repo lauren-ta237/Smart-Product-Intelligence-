@@ -10,6 +10,7 @@ from app.api.router import api_router
 from app.core.database import init_db
 from app.core.config.settings import settings
 from app.core.logging import setup_logging
+from app.modules.catalog.router import router as catalog_router
 
 # Load environmental configurations explicitly 
 load_dotenv()
@@ -72,6 +73,14 @@ setup_logging()
 app.include_router(
     api_router, 
     prefix="/api/v1"
+)
+
+# BULLETPROOF FALLBACK: Also mount catalog directly at root /products 
+# so requests lacking the /api/v1 prefix succeed instantly!
+app.include_router(
+    catalog_router,
+    prefix="/products",
+    tags=["Catalog Fallback"]
 )
 
 @app.get("/health")
