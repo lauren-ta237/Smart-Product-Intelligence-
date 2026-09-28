@@ -56,38 +56,25 @@ async def upload_product_image(
         )
 
     try:
-        # Get file extension
         file_extension = (
             Path(file.filename).suffix.lower()
             if file.filename
             else ".jpg"
         )
-
-        # Create unique filename
         unique_filename = f"{uuid.uuid4()}{file_extension}"
-
-        # Full path on server
         file_path = UPLOAD_DIR / unique_filename
 
-        # Save file to disk
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Path stored in database
         relative_path = f"uploads/{unique_filename}"
-
-        return {
-            "image_url": relative_path
-        }
+        return {"image_url": relative_path}
 
     except Exception as e:
-        print(
-            f"[UPLOAD ERROR] Failed to save image file: {e}"
-        )
-
+        print(f"[UPLOAD ERROR] Failed to save image file: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to upload image file.",
+            detail=f"Failed to upload image file: {str(e)}",
         )
 
 
@@ -103,7 +90,6 @@ async def get_all_products(
     """
     Fetches vendor-scoped products for the frontend review dashboard.
     """
-
     if not vendor:
         return []
 
@@ -111,19 +97,17 @@ async def get_all_products(
 
     try:
         service = ProductCRUDService(db)
-
         db_results, _ = await service.list_products(
             vendor_id=vendor_id
         )
-
         return db_results
 
     except Exception as e:
-        print(
-            f"[PRESENTATION WARNING] DB fetch failed: {str(e)}."
+        print(f"[PRESENTATION ERROR] DB fetch failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database fetch failed: {str(e)}",
         )
-
-        return []
 
 
 # ============================================================
@@ -140,7 +124,6 @@ async def save_analyzed_product(
     Captures the live saving event directly from the frontend
     'Save Analysis to Database' button.
     """
-
     vendor_id = vendor.id if hasattr(vendor, "id") else vendor
 
     if not vendor_id:
@@ -151,31 +134,19 @@ async def save_analyzed_product(
 
     try:
         from app.modules.products.schemas import ProductCreate
-
         service = ProductCRUDService(db)
-
-        # Convert the incoming dictionary into the backend schema.
-        #
-        # IMPORTANT:
-        # ProductCreate must contain bounding_box if we want
-        # the AI coordinates to reach the database.
         data = ProductCreate(**payload)
-
         saved = await service.create_product(
             data,
             vendor_id=vendor_id,
         )
-
         return saved
 
     except Exception as e:
-        print(
-            f"[SAVE ERROR] Failed to persist analyzed product: {e}"
-        )
-
+        print(f"[SAVE ERROR] Failed to persist analyzed product: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Unable to save product to database.",
+            detail=f"Unable to save product to database: {str(e)}",
         )
 
 
@@ -191,25 +162,7 @@ async def batch_update_products(
 ):
     """
     Bulk-save AI-analyzed products from AnalysisViewer.tsx.
-
-    Each item is expected to contain its own:
-
-        bounding_box
-
-    together with:
-
-        name
-        description
-        category
-        price
-        image_url
-        approved
-        stock_quantity
-
-    The bounding_box is intentionally preserved when converting
-    the incoming dictionary into ProductCreate.
     """
-
     vendor_id = vendor.id if hasattr(vendor, "id") else vendor
 
     if not vendor_id:
@@ -233,106 +186,34 @@ async def batch_update_products(
 
     try:
         from app.modules.products.schemas import ProductCreate
-
         service = ProductCRUDService(db)
-
         saved_products = []
 
         for index, item in enumerate(payload):
             if not isinstance(item, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail=(
-                        f"Invalid product at index {index}. "
-                        "Each product must be an object."
-                    ),
+                    detail=f"Invalid product at index {index}. Each product must be an object.",
                 )
 
-            # ----------------------------------------------------
-            # Extract bounding box explicitly.
-            #
-            # This is the critical part of the fix.
-            # ----------------------------------------------------
-
             bounding_box = item.get("bounding_box")
-
-            # Debug output so we can verify what reaches FastAPI.
-            print(
-                f"[BATCH SAVE] Product {index}: "
-                f"{item.get('name')} | "
-                f"bounding_box={bounding_box}"
-            )
-
-            # ----------------------------------------------------
-            # Create a clean payload for ProductCreate.
-            # ----------------------------------------------------
-
             product_payload = {
-                "name": str(
-                    item.get(
-                        "name",
-                        "Unnamed Product",
-                    )
-                ),
-
-                "description": item.get(
-                    "description",
-                    "AI-detected item",
-                ),
-
-                "category": item.get(
-                    "category",
-                    "General",
-                ),
-
-                "price": item.get(
-                    "price",
-                    0.0,
-                ),
-
-                "image_url": item.get(
-                    "image_url"
-                ),
-
-                # ------------------------------------------------
-                # CRITICAL:
-                # Preserve the exact AI bounding box.
-                # ------------------------------------------------
+                "name": str(item.get("name", "Unnamed Product")),
+                "description": item.get("description", "AI-detected item"),
+                "category": item.get("category", "General"),
+                "price": item.get("price", 0.0),
+                "image_url": item.get("image_url"),
                 "bounding_box": bounding_box,
-
-                "approved": item.get(
-                    "approved",
-                    True,
-                ),
-
-                "stock_quantity": item.get(
-                    "stock_quantity",
-                    10,
-                ),
+                "approved": item.get("approved", True),
+                "stock_quantity": item.get("stock_quantity", 10),
             }
 
-            # ----------------------------------------------------
-            # Convert to backend Pydantic schema.
-            # ----------------------------------------------------
-
-            product_data = ProductCreate(
-                **product_payload
-            )
-
-            # ----------------------------------------------------
-            # Persist product.
-            # ----------------------------------------------------
-
+            product_data = ProductCreate(**product_payload)
             saved = await service.create_product(
                 product_data,
                 vendor_id=vendor_id,
             )
-
             saved_products.append(saved)
-
-        # --------------------------------------------------------
-        # Return useful information to frontend/debugging.
-        # --------------------------------------------------------
 
         return {
             "status": "success",
@@ -344,16 +225,10 @@ async def batch_update_products(
         raise
 
     except Exception as e:
-        print(
-            "[BATCH SAVE ERROR] "
-            f"Failed to persist batch products: {e}"
-        )
-
+        print(f"[BATCH SAVE ERROR] Failed to persist batch products: {e}")
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Unable to batch-save products to database."
-            ),
+            detail=f"Unable to batch-save products: {str(e)}",
         )
 
 
@@ -371,12 +246,9 @@ async def approve_product(
     Approves a product using the existing product approval logic.
     """
     vendor_id = vendor.id if hasattr(vendor, "id") else vendor
-
-    # Reuse the existing logical approval path.
     from app.modules.products.router import (
         approve_product as approve_fn,
     )
-
     return await approve_fn(
         payload,
         db,
@@ -399,11 +271,8 @@ async def update_product_direct(
     Updates an existing vendor product.
     """
     vendor_id = vendor.id if hasattr(vendor, "id") else vendor
-
     from app.modules.products.schemas import ProductUpdate
-
     service = ProductCRUDService(db)
-
     data = ProductUpdate(**payload)
 
     return await service.update_product(
