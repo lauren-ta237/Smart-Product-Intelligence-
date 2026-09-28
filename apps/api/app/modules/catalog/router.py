@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.core.auth import get_current_vendor
+from app.core.auth import get_current_vendor, get_current_vendor_optional
 from app.core.database import get_db
 from app.modules.catalog.models import Product
 
@@ -53,16 +53,62 @@ class BatchUpdatePayload(BaseModel):
     market_region: Optional[str] = "Global"
 
 
+# ============================================================
+# GET PRODUCTS (WITH OR WITHOUT TRAILING SLASH SUPPORT)
+# ============================================================
+
+@router.get("", "/")
+async def get_all_products(
+    db: AsyncSession = Depends(get_db),
+    vendor=Depends(get_current_vendor_optional),
+):
+    """
+    Fetches vendor-scoped products for the frontend review dashboard.
+    Handles requests with or without trailing slashes.
+    """
+    if not vendor:
+        return []
+
+    vendor_id = vendor.id if hasattr(vendor, "id") else vendor
+
+    try:
+        stmt = select(Product).where(Product.vendor_id == vendor_id)
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database fetch failed: {str(e)}"
+        )
+
+
+# ============================================================
+# SEARCH CATALOG INVENTORY
+# ============================================================
+
 @router.get("/search", response_model=List[InventorySearchResponse])
 async def search_catalog_inventory(
     q: str = Query(..., description="The product search query term"),
     db: AsyncSession = Depends(get_db)
 ):
     """Search catalog inventory by name."""
-    stmt = select(Product).where(Product.name.ilike(f"%{q}%")).limit(5)
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    try:
+        stmt = select(Product).where(Product.name.ilike(f"%{q}%")).limit(5)
+        result = await db.execute(stmt)
+        return result.scalars().all()
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Search failed: {str(e)}"
+        )
 
+
+# ============================================================
+# BATCH UPDATE PRODUCTS
+# ============================================================
 
 @router.post("/batch-update")
 async def batch_update_products(
@@ -85,11 +131,9 @@ async def batch_update_products(
 
             # Handle absolute URLs
             if clean.startswith("http://") or clean.startswith("https://"):
-                # If this is a local uploads URL, extract the uploads path
                 if "/uploads/" in clean:
                     clean = clean.split("/uploads/")[-1]
                 else:
-                    # External URL, leave unchanged
                     return clean
 
             # Already has uploads/ prefix
@@ -115,7 +159,6 @@ async def batch_update_products(
             product = result.scalars().first()
 
             # Resolve the correct permanent URL.
-            # Reject any blob: URLs coming from the frontend preview.
             final_image_path = clean_img_path(item.image_url) or default_img
 
             if product:
