@@ -4,6 +4,7 @@ from typing import List, Optional
 import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -75,12 +76,11 @@ async def get_all_products(
         return result.scalars().all()
 
     except Exception as e:
-        import traceback
-        err_msg = traceback.format_exc()
-        print(err_msg) # Force print to stdout
-        raise HTTPException(
+        trace = traceback.format_exc()
+        print(trace)
+        return JSONResponse(
             status_code=500,
-            detail=f"CRASH DETAILS: {str(e)} | Trace: {err_msg}"
+            content={"error": str(e), "trace": trace},
         )
 
 
