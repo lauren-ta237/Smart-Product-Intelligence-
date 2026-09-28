@@ -57,7 +57,8 @@ class BatchUpdatePayload(BaseModel):
 # GET PRODUCTS (WITH OR WITHOUT TRAILING SLASH SUPPORT)
 # ============================================================
 
-@router.get("", "/")
+@router.get("")
+@router.get("/")
 async def get_all_products(
     db: AsyncSession = Depends(get_db),
     vendor=Depends(get_current_vendor_optional),

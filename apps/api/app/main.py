@@ -75,11 +75,9 @@ app.include_router(
     prefix="/api/v1"
 )
 
-# BULLETPROOF FALLBACK: Also mount catalog directly at root /products 
-# so requests lacking the /api/v1 prefix succeed instantly!
+# Also expose the catalog's own /products routes without the /api/v1 prefix.
 app.include_router(
     catalog_router,
-    prefix="/products",
     tags=["Catalog Fallback"]
 )
 
