@@ -5,7 +5,6 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1 import dashboard, user
 from app.modules.intelligence.router import router as intelligence_router
 from app.modules.media.router import router as media_router
-from app.modules.products.router import router as products_router
 from app.modules.orders.router import router as orders_router  # 🟢 IMPORT ORDERS ROUTER
 from app.modules.admin.router import router as admin_router
 from app.api.v1.developer import router as developer_router
@@ -31,9 +30,8 @@ api_router.include_router(intelligence_router, prefix="/ai")
 # namespace required by the public API structure.
 api_router.include_router(intelligence_router, prefix="/analysis")
 
-## 3. Products & Catalog
-api_router.include_router(products_router)
-# Remove prefix="/inventory" so it mounts cleanly at /api/v1/products
+# 3. Products & Catalog
+# Use catalog_router exclusively to handle products and prevent router collisions
 api_router.include_router(catalog_router, prefix="", tags=["Catalog"])
 
 # 5. Dashboard & Admin

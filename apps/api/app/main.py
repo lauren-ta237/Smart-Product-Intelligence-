@@ -45,7 +45,6 @@ allowed_origins = [
     "http://127.0.0.1:8080",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://*.vercel.app",  # Fallback wildcard concept if supported or explicit domains below
     *extra_origins,
 ]
 
@@ -53,7 +52,7 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app", # Automatically allows all Vercel deployment preview and production URLs
+    allow_origin_regex=r"https://.*\.vercel\.app", # Automatically allows all Vercel preview and production deployment URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
