@@ -20,12 +20,12 @@ if sslmode is not None:
 else:
     database_connect_args = {}
 
-# Use NullPool for serverless architectures (like Vercel) to prevent socket binding conflicts
+# Configure the async database engine with explicit serverless settings
 engine = create_async_engine(
-    database_url,
-    connect_args=database_connect_args,
+    database_url.render_as_string(hide_password=False),
+    connect_args={"ssl": "require"},  # Force explicit ssl requirement for cloud DBs
     echo=False,
-    poolclass=NullPool
+    poolclass=NullPool,
 )
 
 # Create session maker factory
