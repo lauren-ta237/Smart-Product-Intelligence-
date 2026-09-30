@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from app.core.config.settings import settings
 
 # Configure the async database engine
@@ -19,13 +20,12 @@ if sslmode is not None:
 else:
     database_connect_args = {}
 
+# Use NullPool for serverless architectures (like Vercel) to prevent socket binding conflicts
 engine = create_async_engine(
     database_url,
     connect_args=database_connect_args,
-    echo=True,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True
+    echo=False,
+    poolclass=NullPool
 )
 
 # Create session maker factory
@@ -198,8 +198,6 @@ async def init_db():
         # =====================================================================
         # 🟢 MAGNITUDE SELF-HEALING: FIX EXISTING PRICES (2, 3, 5 FCFA)
         # =====================================================================
-        # This fixes products like Mangoes and Limes that were already saved
-        # with USD-scale values in the main products table.
         await _run_migration_step(
             """
             UPDATE products 
