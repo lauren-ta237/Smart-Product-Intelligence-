@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
-from app.core.database import init_db
+from app.core.database import init_db, engine, Base
 from app.core.config.settings import settings
 from app.core.logging import setup_logging
 from app.modules.catalog.router import router as catalog_router
@@ -84,3 +84,10 @@ app.include_router(
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+# Temporary utility route to initialize tables on Supabase
+@app.post("/init-db", tags=["Setup"])
+async def initialize_database():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    return {"status": "success", "message": "Database tables created successfully on Supabase!"}
