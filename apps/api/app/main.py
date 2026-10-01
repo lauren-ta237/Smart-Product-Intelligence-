@@ -88,9 +88,17 @@ app.include_router(
 async def health():
     return {"status": "healthy"}
 
-# Temporary utility route to initialize tables on Supabase
+# Temporary utility route to initialize tables on Supabase with error visibility
 @app.post("/init-db", tags=["Setup"])
 async def initialize_database():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return {"status": "success", "message": "Database tables created successfully on Supabase!"}
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return {"status": "success", "message": "Database tables created successfully on Supabase!"}
+    except Exception as e:
+        import traceback
+        error_detail = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "detail": str(e), "traceback": error_detail}
+        )
