@@ -88,22 +88,29 @@ async def get_platform_analytics(db: AsyncSession = Depends(get_db)):
 
 @router.get("/ai-pipeline", dependencies=[Depends(verify_admin_role)])
 async def get_ai_pipeline_metrics(db: AsyncSession = Depends(get_db)):
-    """Retrieve execution tracking profiles from vision jobs."""
+    """Retrieve execution tracking profiles from vision jobs safely."""
     try:
+        # Safely query completion counts
         comp_stmt = select(func.count(AIAnalysis.id)).where(AIAnalysis.status == AnalysisStatus.COMPLETED)
-        fail_stmt = select(func.count(AIAnalysis.id)).where(AIAnalysis.status == AnalysisStatus.FAILED)
-        time_stmt = select(func.avg(AIAnalysis.processing_time)).where(AIAnalysis.status == AnalysisStatus.COMPLETED)
-        items_stmt = select(func.sum(AIAnalysis.detected_count)).where(AIAnalysis.status == AnalysisStatus.COMPLETED)
-
         comp_res = await db.execute(comp_stmt)
-        fail_res = await db.execute(fail_stmt)
-        time_res = await db.execute(time_stmt)
-        items_res = await db.execute(items_stmt)
-
         completed_jobs = int(comp_res.scalar() or 0)
+
+        fail_stmt = select(func.count(AIAnalysis.id)).where(AIAnalysis.status == AnalysisStatus.FAILED)
+        fail_res = await db.execute(fail_stmt)
         failed_jobs = int(fail_res.scalar() or 0)
-        avg_processing_time = round(float(time_res.scalar() or 0.0), 2)
-        total_detected_items = int(items_res.scalar() or 0)
+
+        # Optional attributes check for schema safety
+        avg_processing_time = 0.0
+        if hasattr(AIAnalysis, "processing_time"):
+            time_stmt = select(func.avg(AIAnalysis.processing_time)).where(AIAnalysis.status == AnalysisStatus.COMPLETED)
+            time_res = await db.execute(time_stmt)
+            avg_processing_time = round(float(time_res.scalar() or 0.0), 2)
+
+        total_detected_items = 0
+        if hasattr(AIAnalysis, "detected_count"):
+            items_stmt = select(func.sum(AIAnalysis.detected_count)).where(AIAnalysis.status == AnalysisStatus.COMPLETED)
+            items_res = await db.execute(items_stmt)
+            total_detected_items = int(items_res.scalar() or 0)
 
         return {
             "completed_jobs": completed_jobs,
@@ -112,7 +119,14 @@ async def get_ai_pipeline_metrics(db: AsyncSession = Depends(get_db)):
             "total_detected_items": total_detected_items
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to query vision metrics: {str(e)}")
+        # Fallback payload to prevent 500 error cascade on dashboard load
+        return {
+            "completed_jobs": 0,
+            "failed_jobs": 0,
+            "avg_processing_time_seconds": 0.0,
+            "total_detected_items": 0,
+            "warning": f"Could not fully query AI pipeline table: {str(e)}"
+        }
 
 
 @router.post("/price-suggestion", response_model=PriceSuggestionResponse, dependencies=[Depends(verify_admin_role)])
@@ -121,7 +135,6 @@ async def get_price_suggestion(payload: PriceSuggestionRequest, db: AsyncSession
     name_query = payload.product_name.strip()
     grade = payload.grade
 
-    # 🟢 Updated base targets to FCFA (XAF)
     base_min = 500.0
     base_target = 1500.0
     base_max = 5000.0
@@ -361,6 +374,7 @@ async def reset_admin_password(
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to reset password: {str(e)}")
 
+
 @router.get("/orders", dependencies=[Depends(verify_admin_role)])
 async def list_all_system_orders(db: AsyncSession = Depends(get_db)):
     """Retrieve all platform orders for administrative tracking and logs."""
@@ -379,6 +393,7 @@ async def list_all_system_orders(db: AsyncSession = Depends(get_db)):
             "created_at": order_obj.created_at
         })
     return output
+
 
 @router.get("/api-keys", response_model=List[APIKeyResponse], dependencies=[Depends(verify_admin_role)])
 async def list_api_keys(db: AsyncSession = Depends(get_db)):
@@ -415,13 +430,12 @@ async def create_api_key(payload: APIKeyCreateRequest, db: AsyncSession = Depend
         await db.commit()
         await db.refresh(key_obj)
 
-        # Get developer email
         user_stmt = select(User.email).where(User.id == payload.developer_id)
         user_res = await db.execute(user_stmt)
         email = user_res.scalar_one_or_none()
 
         resp = APIKeyResponse.from_orm(key_obj)
-        resp.raw_key = raw_key # Returned to the admin once during creation
+        resp.raw_key = raw_key
         resp.developer_email = email
         return resp
     except Exception as e:
@@ -440,7 +454,7 @@ async def revoke_api_key(key_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="API Key record not found.")
 
     try:
-        key_obj.is_active = not key_obj.is_active # Toggles active state
+        key_obj.is_active = not key_obj.is_active
         await db.commit()
         return {
             "status": "success",
@@ -494,7 +508,6 @@ async def toggle_vendor_status(
         vendor.is_active = is_active
         vendor.is_verified = is_verified
 
-        # Send alert notification to the vendor
         if is_verified and not old_verified:
             notif = Notification(
                 user_id=vendor.id,
