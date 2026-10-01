@@ -17,10 +17,13 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Skip automatic DDL / table creation on Vercel serverless environment 
-    # to avoid read-only or resource busy errors.
-    if not os.getenv("VERCEL"):
-        await init_db()
+    # Automatically ensure database tables exist on startup
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("[LIFESPAN] Database tables checked/created successfully.")
+    except Exception as e:
+        print(f"[LIFESPAN] Database initialization note: {e}")
         
     try:
         yield
