@@ -280,13 +280,25 @@ async def list_eligible_users(
         return []
 
 
-@router.get("/admins", response_model=List[AdminResponse], dependencies=[Depends(verify_admin_role)])
+@router.get("/admins", dependencies=[Depends(verify_admin_role)])
 async def list_admins(db: AsyncSession = Depends(get_db)):
-    """Retrieve all administrative Superadmin users in the system."""
+    """Retrieve all administrative Superadmin users safely."""
     try:
         stmt = select(User).where(User.role == UserRole.ADMIN).order_by(User.created_at.desc())
         res = await db.execute(stmt)
-        return res.scalars().all()
+        admins = res.scalars().all()
+        
+        return [{
+            "id": str(a.id),
+            "email": a.email,
+            "first_name": getattr(a, "first_name", ""),
+            "last_name": getattr(a, "last_name", ""),
+            "country": getattr(a, "country", "Cameroon"),
+            "city": getattr(a, "city", "Yaounde"),
+            "language": getattr(a, "language", "en"),
+            "is_active": bool(getattr(a, "is_active", True)),
+            "created_at": getattr(a, "created_at", None)
+        } for a in admins]
     except Exception:
         return []
 
