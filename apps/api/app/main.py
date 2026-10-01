@@ -1,3 +1,4 @@
+# app/main.py
 import asyncio
 import os
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from app.api.router import api_router
 from app.core.database import init_db, engine, Base
 from app.core.config.settings import settings
 from app.core.logging import setup_logging
+from app.modules.admin.router import router as admin_router
 from app.modules.catalog.router import router as catalog_router
 
 # Load environmental configurations explicitly 
@@ -82,6 +84,12 @@ app.include_router(
 app.include_router(
     catalog_router,
     tags=["Catalog Fallback"]
+)
+
+# Expose admin routes directly at the root level so /admin/... paths work instantly
+app.include_router(
+    admin_router,
+    tags=["Admin Root Fallback"]
 )
 
 @app.get("/health")
