@@ -91,6 +91,12 @@ async def login_form(
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal authentication pipeline failure.",
+        )
 
 
 @router.post("/refresh", response_model=TokenResponse)
