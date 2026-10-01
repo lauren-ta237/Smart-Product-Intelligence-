@@ -54,11 +54,11 @@ allowed_origins = [
     *extra_origins,
 ]
 
-# Configure strict Cross-Origin Resource Sharing (CORS) boundaries
+# Configure strict Cross-Origin Resource Sharing (CORS) boundaries with wildcard matching support for Vercel
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app", # Automatically allows all Vercel preview and production deployment URLs
+    allow_origins=["*"] if os.getenv("ENVIRONMENT") == "development" else allowed_origins,
+    allow_origin_regex=r"https://([a-zA-Z0-9-_]+\.)*vercel\.app", # Safely catches all custom Vercel subdomains and production deployment URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
