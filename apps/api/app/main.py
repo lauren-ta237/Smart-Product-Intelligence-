@@ -42,8 +42,8 @@ app = FastAPI(
     lifespan=lifespan 
 )
 
-os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
+# os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
+# app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
 app.mount(
     "/static",
     StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", check_dir=False),
