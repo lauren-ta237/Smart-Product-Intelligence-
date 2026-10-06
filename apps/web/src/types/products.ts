@@ -74,6 +74,7 @@ export interface DetectedProduct {
     confidence_score: number;
     bounding_box: ProductBoundingBox | string | null; 
     image_url?: string | null;
+    crop_url?: string | null;
     cropped_image_url?: string | null;
     
     // REGIONAL OVERRIDES: Expected string | null from FastAPI

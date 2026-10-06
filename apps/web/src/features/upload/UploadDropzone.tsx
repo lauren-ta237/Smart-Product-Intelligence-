@@ -1,7 +1,7 @@
 // apps/web/src/features/upload/UploadDropzone.tsx
 import { useState, useRef } from "react";
 import { uploadImage } from "../../api/images";
-import { startAnalysis, getAnalysis, getDetectedProducts } from "../../api/analysis"; 
+import { getAnalysis, getDetectedProducts } from "../../api/analysis";
 import AnalysisViewer from "../analysis/AnalysisViewer";
 
 interface AnalysisData {
@@ -38,10 +38,8 @@ export default function UploadDropzone() {
       if (!permanentUrl) {
         throw new Error("Backend did not return a permanent image URL.");
       }
-      // 2. Trigger AI Analysis
-      setStatusText("triggering");
-      const triggerRes = await startAnalysis(image.id);
-      const analysisId = triggerRes?.id || triggerRes?.analysis_id;
+      // Upload response contains the analysis created by the backend.
+      const analysisId = image?.analysis_id;
       
       if (!analysisId || analysisId === "undefined") {
         setStatusText("error");

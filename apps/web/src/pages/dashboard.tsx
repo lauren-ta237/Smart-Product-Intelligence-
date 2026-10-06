@@ -8,7 +8,7 @@ import Upload from "../features/upload/UploadDropzone";
 import ProductCreateForm from "../components/products/ProductCreateForm";
 import ApiKeyManager from "../components/developer/ApiKeyManager";
 
-import { formatImageUrl, normalizeBoundingBox } from "../api/imageUtils";
+import { formatImageUrl } from "../api/imageUtils";
 import { getProducts } from "../api/products";
 import { useDashboard } from "../hooks/useDashboard";
 import { getBuyerOrders } from "../api/orders";
@@ -33,6 +33,8 @@ export interface RawProduct {
   confidence_score?: number;
   image_url?: string;
   imageUrl?: string;
+  crop_url?: string;
+  cropped_image_url?: string;
   price?: number | string;
   suggested_price?: number | string;
   unit_price?: number | string;
@@ -50,6 +52,7 @@ export interface ProduceItem {
   category?: string;
   confidence_score?: number;
   imageUrl?: string;
+  crop_url?: string;
   price?: number;
   bounding_box?: any;
   boundingBoxes?: BoundingBox[];
@@ -357,78 +360,6 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
   }, [location.pathname]);
 
   // ---------------------------------------------------------
-  // IMAGE CROPPING STYLE RESOLVER
-  // ---------------------------------------------------------
-
-  const getCroppedStyle = useCallback(
-    (box: any): React.CSSProperties => {
-      if (!box || Object.keys(box).length === 0) {
-        return {
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          position: "relative",
-        };
-      }
-
-      const isSingleItem =
-        (box as any).is_single_item === true ||
-        (box as any).detection_type === "single" ||
-        ("width" in box &&
-          "height" in box &&
-          Number(box.width) >= 0.98 &&
-          Number(box.height) >= 0.98) ||
-        ("xmax" in box &&
-          "xmin" in box &&
-          "ymax" in box &&
-          "ymin" in box &&
-          Number(box.xmax) - Number(box.xmin) >= 0.98 &&
-          Number(box.ymax) - Number(box.ymin) >= 0.98) ||
-        ("x" in box &&
-          "y" in box &&
-          Number(box.x) <= 0.05 &&
-          Number(box.y) <= 0.05 &&
-          Number(box.width) >= 0.9 &&
-          Number(box.height) >= 0.9);
-
-      if (isSingleItem) {
-        return {
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          position: "relative",
-        };
-      }
-
-      if (
-        typeof box === "object" &&
-        "width" in box &&
-        "height" in box &&
-        "x" in box &&
-        "y" in box &&
-        Number(box.width) > 0 &&
-        Number(box.height) > 0
-      ) {
-        return {
-          position: "absolute",
-          maxWidth: "none",
-          width: `${100 / Number(box.width)}%`,
-          height: `${100 / Number(box.height)}%`,
-          left: `-${(Number(box.x) / Number(box.width)) * 100}%`,
-          top: `-${(Number(box.y) / Number(box.height)) * 100}%`,
-        };
-      }
-
-      return {
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-      };
-    },
-    []
-  );
-
-  // ---------------------------------------------------------
   // MAP API PRODUCT TO FRONTEND PRODUCT
   // ---------------------------------------------------------
 
@@ -443,17 +374,12 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
         !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : 1500.0;
 
       const finalUrl =
-        item.image_url || item.imageUrl || fallbackImage || "";
-
-      let boxes: BoundingBox[] = [];
-
-      if (item.bounding_box) {
-        const normalized = normalizeBoundingBox(item.bounding_box);
-
-        if (normalized) {
-          boxes = [normalized];
-        }
-      }
+        item.crop_url ||
+        item.cropped_image_url ||
+        item.image_url ||
+        item.imageUrl ||
+        fallbackImage ||
+        "";
 
       return {
         id: String(
@@ -471,12 +397,13 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
         imageUrl: finalUrl,
         price: parsedPrice,
         bounding_box: item.bounding_box,
-        boundingBoxes: boxes,
+        boundingBoxes: item.boundingBoxes || item.bounding_boxes,
         stock: item.stock_quantity ?? 50,
         vendor_id: item.vendor_id
           ? String(item.vendor_id)
           : undefined,
         approved: item.approved ?? true,
+        crop_url: item.crop_url || item.cropped_image_url || undefined,
       };
     },
     []
@@ -992,14 +919,12 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                         <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl border border-white/5 flex items-center justify-center">
                           <img
                             src={formatImageUrl(
-                              p.imageUrl ||
+                              p.crop_url ||
+                                p.imageUrl ||
                                 (p as any).image_url
                             )}
                             alt={p.name}
-                            className="max-w-none absolute transition-all duration-300"
-                            style={getCroppedStyle(
-                              p.bounding_box
-                            )}
+                            className="h-full w-full object-contain"
                             onError={(e) =>
                               (e.currentTarget.style.display =
                                 "none")
@@ -1143,14 +1068,12 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                       <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl flex items-center justify-center">
                         <img
                           src={formatImageUrl(
-                            prod.imageUrl ||
+                            prod.crop_url ||
+                              prod.imageUrl ||
                               (prod as any).image_url
                           )}
                           alt={prod.name}
-                          className="max-w-none absolute transition-all duration-300"
-                          style={getCroppedStyle(
-                            prod.bounding_box
-                          )}
+                          className="h-full w-full object-contain"
                           onError={(e) =>
                             (e.currentTarget.style.display =
                               "none")

@@ -16,6 +16,10 @@ export default defineConfig({
         target: process.env.VITE_DEV_BACKEND_URL || 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/static': {
+        target: process.env.VITE_DEV_BACKEND_URL || 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

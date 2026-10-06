@@ -2,20 +2,6 @@
 import { api } from "./client";
 
 /**
- * Starts AI processing after upload.
- * AI endpoints are exposed under the canonical /ai namespace.
- */
-export async function startAnalysis(imageId: string) {
-  if (!imageId || imageId === "undefined") {
-    console.error("[API Error] Cannot start analysis: imageId is missing.");
-    throw new Error("Invalid Image ID provided.");
-  }
-  
-  const res = await api.post(`/ai/start/${imageId}`);
-  return res.data;
-}
-
-/**
  * Gets the current AI analysis status.
  */
 export async function getAnalysis(analysisId: string) {

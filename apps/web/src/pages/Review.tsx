@@ -15,109 +15,9 @@ interface SavedProduct {
   sku_cm?: string | null;
   market_sku?: string | null;
   confidence_score?: number | null;
+  crop_url?: string | null;
+  cropped_image_url?: string | null;
   image_url?: string | null;
-  bounding_box?: any;
-}
-
-interface NormalizedBoundingBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/**
- * Convert the database bounding box into percentages.
- *
- * Your database may contain:
- *
- * {
- *   x: 0.29,
- *   y: 0.13,
- *   width: 0.62,
- *   height: 0.45
- * }
- *
- * or:
- *
- * {
- *   x: 29,
- *   y: 13,
- *   width: 62,
- *   height: 45
- * }
- *
- * This function handles BOTH formats.
- */
-function normalizeBox(box: any): NormalizedBoundingBox | null {
-  if (!box) {
-    return null;
-  }
-
-  let parsed = box;
-
-  // Handle JSON stored as a string
-  if (typeof parsed === "string") {
-    try {
-      parsed = JSON.parse(parsed);
-    } catch {
-      return null;
-    }
-  }
-
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof parsed.x !== "number" ||
-    typeof parsed.y !== "number" ||
-    typeof parsed.width !== "number" ||
-    typeof parsed.height !== "number"
-  ) {
-    return null;
-  }
-
-  let { x, y, width, height } = parsed;
-
-  /**
-   * If values are between 0 and 1, they are normalized
-   * decimal coordinates.
-   *
-   * Example:
-   * 0.29 -> 29
-   * 0.13 -> 13
-   * 0.62 -> 62
-   * 0.45 -> 45
-   */
-  if (
-    Math.abs(x) <= 1 &&
-    Math.abs(y) <= 1 &&
-    Math.abs(width) <= 1 &&
-    Math.abs(height) <= 1
-  ) {
-    x *= 100;
-    y *= 100;
-    width *= 100;
-    height *= 100;
-  }
-
-  // Protect against invalid values
-  if (
-    !Number.isFinite(x) ||
-    !Number.isFinite(y) ||
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width <= 0 ||
-    height <= 0
-  ) {
-    return null;
-  }
-
-  return {
-    x,
-    y,
-    width,
-    height,
-  };
 }
 
 export default function Review() {
@@ -235,32 +135,10 @@ export default function Review() {
           <div className="space-y-12">
 
             {productsList.map((product) => {
+              const hasCropUrl = Boolean(product.crop_url || product.cropped_image_url);
               const imgSrc = formatImageUrl(
-                product.image_url || ""
+                product.crop_url || product.cropped_image_url || product.image_url || ""
               );
-
-              /**
-               * IMPORTANT:
-               *
-               * This converts:
-               *
-               * {
-               *   x: 0.29,
-               *   y: 0.13,
-               *   width: 0.62,
-               *   height: 0.45
-               * }
-               *
-               * into:
-               *
-               * {
-               *   x: 29,
-               *   y: 13,
-               *   width: 62,
-               *   height: 45
-               * }
-               */
-              const box = normalizeBox(product.bounding_box);
 
               const confidence =
                 product.confidence_score ?? 0;
@@ -269,44 +147,6 @@ export default function Review() {
                 confidence <= 1
                   ? Math.round(confidence * 100)
                   : Math.round(confidence);
-
-              /**
-               * Calculate the zoomed image dimensions.
-               *
-               * Example:
-               *
-               * width = 62
-               *
-               * image width = 100 / 62 = 161.29%
-               *
-               * height = 45
-               *
-               * image height = 100 / 45 = 222.22%
-               *
-               * This makes the bounding box fill the entire viewport.
-               */
-              const cropImageStyle =
-                box
-                  ? {
-                      position: "absolute" as const,
-
-                      width: `${100 / (box.width / 100)}%`,
-                      height: `${100 / (box.height / 100)}%`,
-
-                      maxWidth: "none",
-                      maxHeight: "none",
-
-                      left: `${-(box.x / box.width) * 100}%`,
-                      top: `${-(box.y / box.height) * 100}%`,
-
-                      objectFit: "fill" as const,
-                    }
-                  : {
-                      position: "relative" as const,
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain" as const,
-                    };
 
               return (
                 <div
@@ -340,18 +180,16 @@ export default function Review() {
                           <img
                             src={imgSrc}
                             alt={product.name}
-                            style={cropImageStyle}
-                            className="block select-none"
+                            className="block h-full w-full select-none object-contain"
                             draggable={false}
                             onError={(e) => {
                               e.currentTarget.style.display = "none";
                             }}
                           />
 
-                          {/* CROP INDICATOR */}
-                          {box && (
+                          {hasCropUrl && (
                             <div className="absolute top-3 left-3 px-3 py-1.5 rounded-lg bg-black/70 backdrop-blur-sm border border-white/10 text-[10px] font-mono text-emerald-400 uppercase tracking-wider pointer-events-none">
-                              Cropped View
+                              Backend Crop
                             </div>
                           )}
 
@@ -444,59 +282,6 @@ export default function Review() {
 
                         </div>
                       </div>
-
-                      {/* BOUNDING BOX DEBUG INFO */}
-                      {box && (
-                        <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-2">
-                            Detection Region
-                          </div>
-
-                          <div className="grid grid-cols-4 gap-2 text-[10px] font-mono">
-
-                            <div>
-                              <span className="text-slate-600">
-                                X
-                              </span>
-
-                              <div className="text-slate-400">
-                                {box.x.toFixed(2)}%
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-slate-600">
-                                Y
-                              </span>
-
-                              <div className="text-slate-400">
-                                {box.y.toFixed(2)}%
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-slate-600">
-                                W
-                              </span>
-
-                              <div className="text-slate-400">
-                                {box.width.toFixed(2)}%
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-slate-600">
-                                H
-                              </span>
-
-                              <div className="text-slate-400">
-                                {box.height.toFixed(2)}%
-                              </div>
-                            </div>
-
-                          </div>
-                        </div>
-                      )}
 
                     </div>
                   </div>

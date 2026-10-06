@@ -111,10 +111,11 @@ export default function AnalysisViewer({
        * Normalize the image path before sending it
        * to the backend.
        */
-      const cleanPath = imageUrl
-        .replace(/\\/g, "/")
-        .replace(/^https?:\/\/[^/]+\/?/, "")
-        .replace(/^\/+/, "");
+      const cleanPath = /^https?:\/\//i.test(imageUrl)
+        ? imageUrl
+        : imageUrl
+            .replace(/\\/g, "/")
+            .replace(/^\/+/, "");
 
       /*
        * Convert every detected product into the exact
@@ -169,15 +170,11 @@ export default function AnalysisViewer({
                 ? Number(p.price)
                 : 0,
 
-            /*
-             * Keep the original uploaded image as
-             * the primary database image.
-             *
-             * The individual cropped image is already
-             * stored separately in cropped_image_url
-             * by the detected product record.
-             */
-            image_url: cleanPath,
+            /* Use the backend-generated crop when it exists. */
+            image_url:
+              p.crop_url ||
+              p.cropped_image_url ||
+              cleanPath,
 
             /*
              * CRITICAL:
@@ -343,11 +340,13 @@ export default function AnalysisViewer({
                      *
                      * Fallback order:
                      *
-                     * 1. cropped_image_url
-                     * 2. image_url
-                     * 3. original imageUrl prop
+                     * 1. crop_url from the API
+                     * 2. legacy cropped_image_url
+                     * 3. image_url
+                     * 4. original imageUrl prop
                      */
-                    image_url:
+                      image_url:
+                      p.crop_url ||
                       p.cropped_image_url ||
                       p.image_url ||
                       imageUrl,

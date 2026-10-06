@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { DetectedProduct } from "../../types/products.ts";
-import { formatImageUrl, normalizeBoundingBox } from "../../api/imageUtils";
+import { formatImageUrl } from "../../api/imageUtils";
 import { api } from "../../api/client";
 
 interface Props {
@@ -21,6 +21,8 @@ interface CatalogItem {
  */
 const getProductImageUrl = (product: DetectedProduct): string => {
   const imageUrl =
+    (product as any).crop_url ||
+    (product as any).cropped_image_url ||
     (product as any).image_url ||
     (product as any).imageUrl ||
     (product as any).file_path ||
@@ -34,76 +36,6 @@ const getProductImageUrl = (product: DetectedProduct): string => {
   return imageUrl;
 };
 
-/**
- * Convert a normalized bounding box into an image crop style.
- */
-const getCroppedStyle = (box: any, isSingleItem: boolean): React.CSSProperties => {
-  if (isSingleItem) {
-    return {
-      width: "100%",
-      height: "100%",
-      objectFit: "contain",
-      position: "relative",
-    };
-  }
-
-  if (!box || typeof box !== "object") {
-    return {
-      width: "100%",
-      height: "100%",
-      objectFit: "contain",
-      position: "relative",
-    };
-  }
-
-  if (
-    "x" in box &&
-    "y" in box &&
-    "width" in box &&
-    "height" in box
-  ) {
-    const x = Number(box.x);
-    const y = Number(box.y);
-    const width = Number(box.width);
-    const height = Number(box.height);
-
-    if (
-      Number.isFinite(x) &&
-      Number.isFinite(y) &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      width > 0 &&
-      height > 0
-    ) {
-      if (x <= 0.05 && y <= 0.05 && width >= 0.98 && height >= 0.98) {
-        return {
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          position: "relative",
-        };
-      }
-
-      return {
-        position: "absolute",
-        maxWidth: "none",
-        maxHeight: "none",
-        width: `${100 / width}%`,
-        height: `${100 / height}%`,
-        left: `-${(x / width) * 100}%`,
-        top: `-${(y / height) * 100}%`,
-      };
-    }
-  }
-
-  return {
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-    position: "relative",
-  };
-};
-
 export default function ProductCard({
   product,
   onUpdate,
@@ -114,18 +46,6 @@ export default function ProductCard({
     "Unnamed Product";
 
   const imageUrl = getProductImageUrl(product);
-  const rawBox = (product as any).bounding_box;
-
-  // Normalize the bounding box using the utility function.
-  const box = normalizeBoundingBox(rawBox);
-
-  const isSingleItem =
-    (product as any).is_single_item === true ||
-    (product as any).detection_type === "single" ||
-    (box &&
-      ((box.width >= 0.98 && box.height >= 0.98) ||
-        ((box as any).xmax - (box as any).xmin >= 0.98 &&
-          (box as any).ymax - (box as any).ymin >= 0.98)));
 
   const [isEditing, setIsEditing] = useState(false);
   const [brand, setBrand] = useState(product.brand || "");
@@ -218,12 +138,7 @@ export default function ProductCard({
             <img
               src={formattedImageUrl}
               alt={product.name || "Product"}
-              className={
-                isSingleItem
-                  ? "w-full h-full object-contain object-center relative transition-all duration-300"
-                  : "max-w-none absolute transition-all duration-300"
-              }
-              style={getCroppedStyle(box, !!isSingleItem)}
+              className="w-full h-full object-contain object-center"
               onError={(e) => {
                 e.currentTarget.style.display = "none";
               }}
