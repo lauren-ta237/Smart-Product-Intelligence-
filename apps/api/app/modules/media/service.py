@@ -7,12 +7,24 @@ from app.modules.media.models import ImageStatus
 
 
 def create_storage_provider():
+    cloudinary_ready = all((
+        settings.CLOUDINARY_CLOUD_NAME,
+        settings.CLOUDINARY_API_KEY,
+        settings.CLOUDINARY_API_SECRET,
+    ))
+
+    if cloudinary_ready:
+        from .cloudinary_storage import CloudinaryStorage
+        return CloudinaryStorage()
+
     if settings.STORAGE_TYPE == "s3":
         from .s3_storage import S3Storage
         return S3Storage()
+
     if settings.STORAGE_TYPE == "cloudinary":
         from .cloudinary_storage import CloudinaryStorage
         return CloudinaryStorage()
+
     return LocalStorage()
 
 

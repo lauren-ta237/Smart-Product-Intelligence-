@@ -1,5 +1,19 @@
 // apps/web/src/pages/imageUtils.ts
 
+const resolveApiOrigin = (): string => {
+  const configured = (
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_BACKEND_ORIGIN ||
+    ""
+  ).trim();
+
+  if (!configured) {
+    return window.location.origin;
+  }
+
+  return configured.replace(/\/api\/v1$/i, "").replace(/\/+$/, "");
+};
+
 /**
  * Safely formats backend image paths into fully qualified URLs.
  *
@@ -27,5 +41,11 @@ export const formatImageUrl = (imagePath?: string | null): string => {
     return normalized;
   }
 
-  return normalized.startsWith("/") ? normalized : `/${normalized}`;
+  if (normalized.startsWith("/")) {
+    const base = resolveApiOrigin();
+    return `${base}${normalized}`;
+  }
+
+  const base = resolveApiOrigin();
+  return `${base}/${normalized}`;
 };
