@@ -21,11 +21,10 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Automatically ensure database tables exist on startup
+    # Run the migration-safe database bootstrap used by the app instead of only create_all.
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        print("[LIFESPAN] Database tables checked/created successfully.")
+        await init_db()
+        print("[LIFESPAN] Database initialization checked successfully.")
     except Exception as e:
         print(f"[LIFESPAN] Database initialization note: {e}")
         
@@ -111,9 +110,8 @@ async def health():
 @app.post("/init-db", tags=["Setup"])
 async def initialize_database():
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        return {"status": "success", "message": "Database tables created successfully on Supabase!"}
+        await init_db()
+        return {"status": "success", "message": "Database schema verified and repaired successfully on Supabase!"}
     except Exception as e:
         import traceback
         error_detail = "".join(traceback.format_exception(type(e), e, e.__traceback__))

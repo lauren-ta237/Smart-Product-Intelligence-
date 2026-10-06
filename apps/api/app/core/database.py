@@ -63,6 +63,16 @@ async def _create_schema_if_missing() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def ensure_ai_analysis_error_message_column() -> None:
+    """Backfill older PostgreSQL databases that were created before ai_analyses.error_message existed."""
+    async with engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE IF EXISTS ai_analyses
+            ADD COLUMN IF NOT EXISTS error_message VARCHAR(2000);
+        """))
+    print("[INIT_DB] Ensured ai_analyses.error_message column exists.")
+
+
 async def get_db():
     """Dependency provider for FastAPI route operations with built-in transaction safety."""
     async with AsyncSessionLocal() as session:
@@ -129,6 +139,9 @@ async def init_db():
             """,
             "Running userrole enum compatibility checks"
         )
+
+        # Backfill older production databases that never received the ai_analyses error column migration.
+        await ensure_ai_analysis_error_message_column()
 
         # Force registration of all models on Base.metadata before create_all.
         import app.models_registry
