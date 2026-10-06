@@ -2,8 +2,8 @@ import os
 import time
 import logging
 import traceback
+import math
 
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 from uuid import UUID, uuid4
 
@@ -28,6 +28,8 @@ from app.modules.catalog.models import (
     DetectedProduct,
     Product,
 )
+from app.modules.media.models import ImageStatus, ProductImage
+from app.modules.media.service import MediaService
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,7 @@ class IntelligenceService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.processor = AIProcessor()
+        self.media = MediaService(db)
 
     # ---------------------------------------------------------
     # Utility: Convert Pydantic / dict objects into dictionaries
@@ -202,6 +205,7 @@ class IntelligenceService:
 
         start = time.time()
         context = context or {}
+        uploaded_crop_urls: list[str] = []
 
         try:
             parsed_analysis_id = UUID(str(analysis_id))
@@ -292,30 +296,9 @@ class IntelligenceService:
             if not source_image_url:
                 raise FileNotFoundError("The analysis does not contain a source image URL.")
 
-            clean_source_path = source_image_url
-            server_host_url = getattr(settings, "SERVER_HOST", "localhost:8000")
-            
-            if f"{server_host_url}/" in clean_source_path:
-                clean_source_path = clean_source_path.split(f"{server_host_url}/", 1)[1]
-            if "localhost:8000/" in clean_source_path:
-                clean_source_path = clean_source_path.split("localhost:8000/", 1)[1]
-            if "127.0.0.1:8000/" in clean_source_path:
-                clean_source_path = clean_source_path.split("127.0.0.1:8000/", 1)[1]
-
-            source_path = Path(clean_source_path)
-            if not source_path.is_absolute():
-                source_path = Path.cwd() / source_path
-
-            source_path = source_path.resolve()
-
-            if not source_path.exists():
-                raise FileNotFoundError(f"Original image could not be found at: {source_path}")
-
-            # =================================================
-            # 4. Determine crop output directory
-            # =================================================
-            crop_output_dir = Path.cwd() / "static" / "cropped"
-            crop_output_dir.mkdir(parents=True, exist_ok=True)
+            source_image_bytes = context.get("_source_image_bytes")
+            if not source_image_bytes:
+                source_image_bytes = await self.media.download(source_image_url)
 
             # =================================================
             # 5. Process every detected product
@@ -341,12 +324,22 @@ class IntelligenceService:
                 box = {}
                 if box_raw:
                     try:
-                        box = {
+                        candidate_box = {
                             "x": float(box_raw.get("x", 0.0)),
                             "y": float(box_raw.get("y", 0.0)),
                             "width": float(box_raw.get("width", 0.0)),
                             "height": float(box_raw.get("height", 0.0)),
                         }
+                        if (
+                            all(math.isfinite(value) for value in candidate_box.values())
+                            and -0.05 <= candidate_box["x"] <= 1.05
+                            and -0.05 <= candidate_box["y"] <= 1.05
+                            and 0 < candidate_box["width"] <= 1.05
+                            and 0 < candidate_box["height"] <= 1.05
+                            and -0.05 <= candidate_box["x"] + candidate_box["width"] <= 1.05
+                            and -0.05 <= candidate_box["y"] + candidate_box["height"] <= 1.05
+                        ):
+                            box = candidate_box
                     except (ValueError, TypeError):
                         box = {}
 
@@ -392,12 +385,17 @@ class IntelligenceService:
                 detected_product_id = uuid4()
                 cropped_image_url = None
                 if box:
-                    cropped_image_url = crop_product_image(
-                        source_image_path=str(source_path),
-                        bounding_box=box,
-                        output_dir=str(crop_output_dir),
-                        product_id=str(detected_product_id),
-                    )
+                    cropped_image = crop_product_image(source_image_bytes, box)
+                    if cropped_image:
+                        cropped_image_url = await self.media.upload_bytes(
+                            cropped_image,
+                            f"{detected_product_id}.jpg",
+                            "image/jpeg",
+                            folder="crops",
+                        )
+                        uploaded_crop_urls.append(cropped_image_url)
+                    else:
+                        box = {}
 
                 detected = DetectedProduct(
                     id=detected_product_id,
@@ -425,18 +423,43 @@ class IntelligenceService:
             # =================================================
             analysis.detected_count = len(raw_products)
             analysis.status = AnalysisStatus.COMPLETED
+            analysis.error_message = None
             analysis.processing_time = time.time() - start
+            image.status = ImageStatus.COMPLETED
             await self.db.commit()
             
             return analysis
 
-        except InvalidDatasetException:
+        except InvalidDatasetException as exc:
             logger.warning(f"[INTELLIGENCE] Invalid dataset for analysis {parsed_analysis_id}")
-            return await self._mark_failed(parsed_analysis_id, start)
+            await self._cleanup_uploaded_crops(uploaded_crop_urls)
+            return await self._mark_failed(parsed_analysis_id, start, self._safe_error_message(exc))
         except Exception as exc:
             logger.error(f"[ERROR] Intelligence Service Failed: {exc}")
             traceback.print_exc()
-            return await self._mark_failed(parsed_analysis_id, start)
+            await self._cleanup_uploaded_crops(uploaded_crop_urls)
+            return await self._mark_failed(parsed_analysis_id, start, self._safe_error_message(exc))
+
+    async def _cleanup_uploaded_crops(self, crop_urls: list[str]) -> None:
+        for crop_url in crop_urls:
+            try:
+                await self.media.delete(crop_url)
+            except Exception:
+                logger.exception("Could not clean up crop asset %s", crop_url)
+
+    @staticmethod
+    def _safe_error_message(error: Exception) -> str:
+        message = f"{type(error).__name__}: {error}"
+        for secret in (
+            settings.GOOGLE_AI_KEY,
+            settings.GOOGLE_API_KEY,
+            settings.GEMINI_API_KEY,
+            settings.ANTHROPIC_API_KEY,
+            settings.CLOUDINARY_API_SECRET,
+        ):
+            if secret:
+                message = message.replace(secret, "[redacted]")
+        return message[:2000]
 
     # ---------------------------------------------------------
     # Failure handler
@@ -445,6 +468,7 @@ class IntelligenceService:
         self,
         analysis_id: UUID,
         start_time: float,
+        error_message: str,
     ) -> Optional[AIAnalysis]:
         try:
             try:
@@ -463,10 +487,17 @@ class IntelligenceService:
                 analysis.status = (
                     AnalysisStatus.FAILED
                 )
+                analysis.error_message = error_message
                 analysis.processing_time = (
                     time.time()
                     - start_time
                 )
+                image_result = await self.db.execute(
+                    select(ProductImage).where(ProductImage.id == analysis.image_id)
+                )
+                image = image_result.scalar_one_or_none()
+                if image:
+                    image.status = ImageStatus.FAILED
                 await self.db.commit()
                 return analysis
         except Exception as err:

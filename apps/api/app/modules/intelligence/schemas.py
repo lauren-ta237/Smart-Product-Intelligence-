@@ -24,6 +24,7 @@ class AnalysisResponse(BaseModel):
     status: str
     detected_count: int
     created_at: datetime
+    error_message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -86,7 +87,13 @@ class DetectedProductResponse(BaseModel):
     confidence_score: float = Field(
         validation_alias=AliasChoices("confidence_score", "confidence")
     )
-    bounding_box: Dict[str, Any]
+    bounding_box: Optional[Dict[str, Any]] = None
+    image_url: Optional[str] = None
+    crop_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("crop_url", "cropped_image_url"),
+        serialization_alias="crop_url",
+    )
 
     # Dynamic Attributes
     price: Optional[float] = 0.0

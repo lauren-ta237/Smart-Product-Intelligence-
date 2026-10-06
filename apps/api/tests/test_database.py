@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 
 from app.core.database import engine
 
@@ -9,8 +10,6 @@ async def test_database_connection():
 
     async with engine.begin() as conn:
 
-        result = await conn.execute(
-            "SELECT 1"
-        )
+        result = await conn.execute(text("SELECT 1"))
 
-        assert result is not None
+        assert result.scalar_one() == 1

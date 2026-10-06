@@ -19,13 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.auth import get_current_vendor
+from app.core.config.settings import settings
 from app.core.database import async_session_maker, get_db
 from app.modules.catalog.models import DetectedProduct
 from app.modules.identity.models import User
 from app.modules.intelligence.models import AIAnalysis, AnalysisStatus
 from app.modules.intelligence.schemas import DetectedProductResponse
 from app.modules.intelligence.service import IntelligenceService
-from app.modules.media.models import ProductImage
+from app.modules.media.models import ImageStatus, ProductImage
 
 from .websocket_manager import ws_manager
 
@@ -129,8 +130,7 @@ async def run_background_analysis(image_id: str, vendor_id: str, analysis_id: st
     async with async_session_maker() as standalone_db:
         try:
             if image_uuid is None:
-                logger.error("[BACKGROUND WORKER ❌] Aborting: image_id is missing or invalid.")
-                return
+                raise ValueError("Image ID is missing or invalid.")
 
             # Fetch product image
             img_result = await standalone_db.execute(
@@ -138,8 +138,10 @@ async def run_background_analysis(image_id: str, vendor_id: str, analysis_id: st
             )
             real_image = img_result.scalar_one_or_none()
             if not real_image:
-                logger.error(f"[BACKGROUND WORKER ❌] Aborting: Image {image_uuid} could not be resolved.")
-                return
+                raise LookupError(f"Image {image_uuid} could not be resolved.")
+
+            real_image.status = ImageStatus.PROCESSING
+            await standalone_db.commit()
 
             # Fetch vendor profile
             vendor_result = await standalone_db.execute(
@@ -147,8 +149,7 @@ async def run_background_analysis(image_id: str, vendor_id: str, analysis_id: st
             )
             real_vendor = vendor_result.scalar_one_or_none()
             if not real_vendor:
-                logger.error(f"[BACKGROUND WORKER ❌] Aborting: Vendor {vendor_uuid} could not be found in database.")
-                return
+                raise LookupError(f"Vendor {vendor_uuid} could not be found in database.")
 
             # Build geographic context profile
             vendor_country = getattr(real_vendor, "country", "Global") or "Global"
@@ -172,7 +173,26 @@ async def run_background_analysis(image_id: str, vendor_id: str, analysis_id: st
             service = IntelligenceService(standalone_db)
             logger.info(f"[BACKGROUND WORKER] Handing off real data + Location Context ({vendor_country}) to IntelligenceService...")
             
-            await service.analyze(image=real_image, vendor=real_vendor, analysis_id=str(analysis_uuid), context=ai_context)
+            analysis = await service.analyze(
+                image=real_image,
+                vendor=real_vendor,
+                analysis_id=str(analysis_uuid),
+                context=ai_context,
+            )
+
+            if analysis is None:
+                raise RuntimeError("Analysis completed without a persisted result.")
+
+            if analysis.status == AnalysisStatus.FAILED:
+                error_message = getattr(analysis, "error_message", None) or "Image analysis failed."
+                await ws_manager.broadcast_to_vendor(str(vendor_uuid or vendor_id), {
+                    "event": "ANALYSIS_FAILED",
+                    "analysis_id": str(analysis_uuid),
+                    "image_id": str(image_uuid or image_id),
+                    "error": error_message,
+                    "status": "FAILED",
+                })
+                return
 
             # 2. WS Broadcast: Processing Succeeded
             await ws_manager.broadcast_to_vendor(str(vendor_uuid or vendor_id), {
@@ -184,7 +204,8 @@ async def run_background_analysis(image_id: str, vendor_id: str, analysis_id: st
             logger.info(f"[BACKGROUND WORKER 🎉] Successfully updated analysis state table for row {analysis_uuid}")
 
         except Exception as bg_err:
-            logger.error(f"[BACKGROUND WORKER 🚨] Task execution crash: {str(bg_err)}")
+            safe_error_message = IntelligenceService._safe_error_message(bg_err)
+            logger.error("[BACKGROUND WORKER] Task execution crash: %s", safe_error_message)
             traceback.print_exc()
 
             # 3. WS Broadcast: Processing Failed
@@ -192,17 +213,25 @@ async def run_background_analysis(image_id: str, vendor_id: str, analysis_id: st
                 "event": "ANALYSIS_FAILED",
                 "analysis_id": str(analysis_uuid),
                 "image_id": str(image_uuid or image_id),
-                "error": str(bg_err),
+                "error": safe_error_message,
                 "status": "FAILED"
             })
 
             try:
+                await standalone_db.rollback()
                 analysis_result = await standalone_db.execute(
                     select(AIAnalysis).where(AIAnalysis.id == analysis_uuid)
                 )
                 failed_analysis = analysis_result.scalar_one_or_none()
                 if failed_analysis:
                     failed_analysis.status = AnalysisStatus.FAILED
+                    failed_analysis.error_message = safe_error_message
+                    image_result = await standalone_db.execute(
+                        select(ProductImage).where(ProductImage.id == image_uuid)
+                    )
+                    failed_image = image_result.scalar_one_or_none()
+                    if failed_image:
+                        failed_image.status = ImageStatus.FAILED
                     await standalone_db.commit()
                     logger.warning("[BACKGROUND WORKER ⚠️] Fallback status forced to FAILED.")
             except Exception as rollback_err:
@@ -292,10 +321,9 @@ async def start_batch_analysis(
 
 # app/modules/intelligence/router.py (Abbreviated section around start_single_analysis)
 # ...
-@router.post("/start/{image_id}", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/start/{image_id}", status_code=status.HTTP_200_OK)
 async def start_single_analysis(
     image_id: str,
-    background_tasks: BackgroundTasks,
     vendor = Depends(get_current_vendor),
     db: AsyncSession = Depends(get_db),
 ):
@@ -303,7 +331,10 @@ async def start_single_analysis(
         vendor_id = _extract_vendor_id(vendor) # vendor is a UUID
         
         result = await db.execute(
-            select(ProductImage).where(ProductImage.id == image_id)
+            select(ProductImage).where(
+                ProductImage.id == image_id,
+                ProductImage.vendor_id == vendor_id,
+            )
         )
         real_image = result.scalar_one_or_none()
 
@@ -313,55 +344,33 @@ async def start_single_analysis(
                 detail=f"Image asset {image_id} not found."
             )
 
-        analysis_record = AIAnalysis(
-            vendor_id=vendor_id,
-            image_id=real_image.id,
-            image_url=real_image.storage_url,  
-            batch_id=None,  
-            provider="google",
-            model_name="gemini-3.6-flash",
-            status=AnalysisStatus.PROCESSING
-        )
-        db.add(analysis_record)
-        await db.commit()
-        await db.refresh(analysis_record)
-
-        # 🟢 Queue task in Celery, fallback to FastAPI BackgroundTasks out-of-the-box
-        try:
-            from app.infrastructure.queue.tasks import analyze_product_image_task
-            analyze_product_image_task.delay(
-                str(real_image.id),
-                str(vendor_id),
-                str(analysis_record.id)
+        existing_result = await db.execute(
+            select(AIAnalysis)
+            .where(
+                AIAnalysis.image_id == real_image.id,
+                AIAnalysis.vendor_id == vendor_id,
             )
-        except Exception:
-            if background_tasks is not None:
-                from app.infrastructure.queue.tasks import run_async_analysis
-                background_tasks.add_task(
-                    run_async_analysis,
-                    str(real_image.id),
-                    str(vendor_id),
-                    str(analysis_record.id)
-                )
-            else:
-                from app.infrastructure.queue.tasks import run_async_analysis
-                asyncio.create_task(
-                    run_async_analysis(
-                        str(real_image.id),
-                        str(vendor_id),
-                        str(analysis_record.id)
-                    )
-                )
+            .order_by(AIAnalysis.created_at.desc())
+            .limit(1)
+        )
+        analysis_record = existing_result.scalar_one_or_none()
+        if not analysis_record:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Analysis is created during image upload; this endpoint only returns an existing analysis.",
+            )
 
         return {
-            "status": "queued",
-            "message": "Single asset analysis pipeline initiated successfully.",
+            "status": analysis_record.status.value,
+            "message": "Returning the existing analysis for this image.",
             "id": str(analysis_record.id),
             "analysis_id": str(analysis_record.id),
             "image_id": str(real_image.id)
         }
     except Exception as e:
         await db.rollback()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 @router.post("/test-bypass", status_code=status.HTTP_202_ACCEPTED)
 async def start_analysis_test(

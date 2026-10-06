@@ -16,14 +16,16 @@ if database_url.drivername == "postgresql":
 sslmode = database_url.query.get("sslmode")
 if sslmode is not None:
     database_url = database_url.difference_update_query(["sslmode"])
-    database_connect_args = {"ssl": sslmode}
+    database_connect_args = {"ssl": False if sslmode == "disable" else sslmode}
 else:
-    database_connect_args = {}
+    database_connect_args = {
+        "ssl": False if settings.ENVIRONMENT.lower() == "development" else "require"
+    }
 
-# Configure the async database engine with explicit serverless settings
+# Respect explicit sslmode configuration while keeping local development usable.
 engine = create_async_engine(
     database_url.render_as_string(hide_password=False),
-    connect_args={"ssl": "require"},  # Force explicit ssl requirement for cloud DBs
+    connect_args=database_connect_args,
     echo=False,
     poolclass=NullPool,
 )

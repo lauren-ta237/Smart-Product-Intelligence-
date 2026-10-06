@@ -49,5 +49,6 @@ class AIAnalysis(BaseModel):
         nullable=False
     )
     raw_response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     detected_count: Mapped[int] = mapped_column(Integer, default=0)
     processing_time: Mapped[float | None] = mapped_column(Float, nullable=True)

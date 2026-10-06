@@ -5,6 +5,7 @@ from typing import Optional
 
 class ImageResponse(BaseModel):
     id: UUID
+    analysis_id: Optional[UUID] = None
     vendor_id: UUID
     storage_url: str
     file_name: str

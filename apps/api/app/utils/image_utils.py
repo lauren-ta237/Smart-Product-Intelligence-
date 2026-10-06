@@ -1,16 +1,15 @@
-import os
-from pathlib import Path
+from io import BytesIO
+import math
 from typing import Any, Optional
 
 from PIL import Image
 
 
 def crop_product_image(
-    source_image_path: str,
+    source_image_bytes: bytes,
     bounding_box: dict[str, Any],
-    output_dir: str,
-    product_id: str,
-) -> Optional[str]:
+    boundary_tolerance: float = 0.05,
+) -> Optional[bytes]:
     """
     Crop one detected product from a source shelf image.
 
@@ -24,145 +23,59 @@ def crop_product_image(
             "height": 0.785
         }
 
-    Returns:
-        URL path that can be stored in PostgreSQL and consumed
-        by the React frontend.
-
-        Example:
-            /static/cropped/cropped_<uuid>.jpg
-
-    Returns None if cropping fails.
+    Returns a JPEG-encoded crop, or None when the box/image is invalid.
     """
-
     try:
-        if not source_image_path:
-            raise ValueError("Source image path is empty.")
+        if not source_image_bytes or not bounding_box:
+            return None
 
-        if not bounding_box:
-            raise ValueError("Bounding box is empty.")
+        coordinates = {
+            key: float(bounding_box[key])
+            for key in ("x", "y", "width", "height")
+        }
+        if not all(math.isfinite(value) for value in coordinates.values()):
+            return None
 
-        # ---------------------------------------------------------
-        # 1. Verify source image exists
-        # ---------------------------------------------------------
-        source_path = Path(source_image_path)
-
-        if not source_path.exists():
-            raise FileNotFoundError(
-                f"Source image does not exist: {source_path}"
-            )
-
-        # ---------------------------------------------------------
-        # 2. Read normalized bounding box
-        # ---------------------------------------------------------
-        x = float(bounding_box.get("x", 0))
-        y = float(bounding_box.get("y", 0))
-        width = float(bounding_box.get("width", 0))
-        height = float(bounding_box.get("height", 0))
-
-        # ---------------------------------------------------------
-        # 3. Validate bounding box
-        # ---------------------------------------------------------
+        x, y = coordinates["x"], coordinates["y"]
+        width, height = coordinates["width"], coordinates["height"]
         if width <= 0 or height <= 0:
-            raise ValueError(
-                f"Invalid bounding box dimensions: {bounding_box}"
+            return None
+        if (
+            x < -boundary_tolerance
+            or y < -boundary_tolerance
+            or x > 1 + boundary_tolerance
+            or y > 1 + boundary_tolerance
+            or width > 1 + boundary_tolerance
+            or height > 1 + boundary_tolerance
+            or x + width > 1 + boundary_tolerance
+            or y + height > 1 + boundary_tolerance
+        ):
+            return None
+
+        x_min_norm = max(0.0, min(1.0, x))
+        y_min_norm = max(0.0, min(1.0, y))
+        x_max_norm = max(0.0, min(1.0, x + width))
+        y_max_norm = max(0.0, min(1.0, y + height))
+        if x_max_norm <= x_min_norm or y_max_norm <= y_min_norm:
+            return None
+
+        with Image.open(BytesIO(source_image_bytes)) as source:
+            if source.format not in {"JPEG", "PNG", "WEBP"}:
+                return None
+            source.load()
+            image = source.convert("RGB")
+            image_width, image_height = image.size
+            box = (
+                max(0, min(image_width, round(x_min_norm * image_width))),
+                max(0, min(image_height, round(y_min_norm * image_height))),
+                max(0, min(image_width, round(x_max_norm * image_width))),
+                max(0, min(image_height, round(y_max_norm * image_height))),
             )
+            if box[2] <= box[0] or box[3] <= box[1]:
+                return None
 
-        # Clamp coordinates to the valid normalized range.
-        x = max(0.0, min(1.0, x))
-        y = max(0.0, min(1.0, y))
-
-        width = max(0.0, min(1.0 - x, width))
-        height = max(0.0, min(1.0 - y, height))
-
-        if width <= 0 or height <= 0:
-            raise ValueError(
-                f"Bounding box falls outside image boundaries: {bounding_box}"
-            )
-
-        # ---------------------------------------------------------
-        # 4. Open original image
-        # ---------------------------------------------------------
-        with Image.open(source_path) as img:
-
-            # Convert to RGB because JPEG cannot store RGBA/P modes.
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            elif img.mode == "L":
-                img = img.convert("RGB")
-
-            image_width, image_height = img.size
-
-            # -----------------------------------------------------
-            # 5. Convert normalized coordinates to pixels
-            # -----------------------------------------------------
-            x_min = int(round(x * image_width))
-            y_min = int(round(y * image_height))
-
-            x_max = int(round((x + width) * image_width))
-            y_max = int(round((y + height) * image_height))
-
-            # Final safety clamp.
-            x_min = max(0, min(image_width, x_min))
-            y_min = max(0, min(image_height, y_min))
-            x_max = max(0, min(image_width, x_max))
-            y_max = max(0, min(image_height, y_max))
-
-            if x_max <= x_min or y_max <= y_min:
-                raise ValueError(
-                    f"Calculated crop is invalid: "
-                    f"({x_min}, {y_min}, {x_max}, {y_max})"
-                )
-
-            # -----------------------------------------------------
-            # 6. Crop product
-            # -----------------------------------------------------
-            cropped_img = img.crop(
-                (
-                    x_min,
-                    y_min,
-                    x_max,
-                    y_max,
-                )
-            )
-
-            # -----------------------------------------------------
-            # 7. Make sure output directory exists
-            # -----------------------------------------------------
-            output_path = Path(output_dir)
-            output_path.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
-            # -----------------------------------------------------
-            # 8. Generate unique filename
-            # -----------------------------------------------------
-            output_filename = f"cropped_{product_id}.jpg"
-            final_file_path = output_path / output_filename
-
-            # -----------------------------------------------------
-            # 9. Save cropped image
-            # -----------------------------------------------------
-            cropped_img.save(
-                final_file_path,
-                format="JPEG",
-                quality=90,
-                optimize=True,
-            )
-
-            print(
-                f"[IMAGE CROP] Successfully cropped product "
-                f"{product_id}: {final_file_path}"
-            )
-
-            # -----------------------------------------------------
-            # 10. Return frontend URL
-            # -----------------------------------------------------
-            return f"/static/cropped/{output_filename}"
-
-    except Exception as exc:
-        print(
-            f"[IMAGE CROP ERROR] Could not crop product "
-            f"{product_id}: {exc}"
-        )
+            output = BytesIO()
+            image.crop(box).save(output, format="JPEG", quality=90, optimize=True)
+            return output.getvalue()
+    except (KeyError, TypeError, ValueError, OSError, OverflowError):
         return None

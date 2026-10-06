@@ -5,6 +5,7 @@ from app.modules.intelligence.confidence import ConfidenceEngine
 from app.modules.intelligence.prompts.product_detection import ProductDetectionPrompt
 from app.modules.intelligence.providers.factory import AIProviderFactory
 from app.modules.intelligence.schemas import AnalysisResult
+from app.modules.media.service import create_storage_provider
 
 # 🟢 Try importing anthropic errors to selectively bypass out-of-credit exceptions
 try:
@@ -91,18 +92,9 @@ class AIProcessor:
         if "bounding" not in instruction.lower():
             instruction += " Make sure to extract precise bounding boxes with coordinates for each product found."
 
-        # 🟢 SAFELY RESOLVE THE LOCAL FILE PATH ON WINDOWS
-        clean_path = image.storage_url.split("localhost:8000/")[-1] if "localhost" in image.storage_url else image.storage_url
-        absolute_path = os.path.abspath(clean_path)
-        
-        if not os.path.exists(absolute_path):
-            print(f"[CRITICAL ERROR] File missing on disk at: {absolute_path}")
-            raise FileNotFoundError(f"Image asset missing on path: {absolute_path}")
-            
-        # 🟢 READ IMAGE DATA STREAM TO RAW BINARY BYTES
-        print(f"[AI ENGINE] Loading raw image binary bytes from: {clean_path}")
-        with open(absolute_path, "rb") as image_file:
-            image_bytes = image_file.read()
+        image_bytes = await create_storage_provider().download(image.storage_url)
+        if context is not None:
+            context["_source_image_bytes"] = image_bytes
 
         last_exception = None
         attempted_any = False
@@ -124,6 +116,9 @@ class AIProcessor:
                 provider_payload = {
                     "prompt": instruction,
                     "image_bytes": image_bytes,
+                    "image_mime_type": getattr(image, "mime_type", None)
+                    if getattr(image, "mime_type", None) in {"image/jpeg", "image/png", "image/webp"}
+                    else "image/jpeg",
                     "location": localization_context,
                     "country": localization_context.get("country", "Global"),
                     "city": localization_context.get("city", "Any City"),

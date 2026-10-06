@@ -1,5 +1,4 @@
 # app/modules/media/router.py
-import os
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,6 @@ from app.core.config.settings import settings
 from app.modules.media.service import MediaService
 from app.modules.media.schemas import ImageResponse
 from app.modules.intelligence.models import AIAnalysis, AnalysisStatus
-from app.infrastructure.queue.tasks import analyze_product_image_task
 
 router = APIRouter(
     prefix="/media",
@@ -20,14 +18,14 @@ router = APIRouter(
 
 @router.post("/upload", response_model=ImageResponse, status_code=status.HTTP_201_CREATED)
 async def upload_media(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = None,
     vendor_id: UUID = Depends(get_current_vendor),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Vendor uploads an image, stores metadata with validation limits,
-    and automatically initiates the background Celery task analysis.
+    Uploads one image, creates its analysis record, and schedules one
+    in-process FastAPI background analysis task.
     """
     # 1. Content Type Verification
     allowed_types = ["image/jpeg", "image/png", "image/webp", "image/jpg"]
@@ -46,39 +44,46 @@ async def upload_media(
             detail=f"File too large. Maximum allowed size is {settings.MAX_UPLOAD_SIZE}MB."
         )
 
+    if len(await file.read(max_size_bytes + 1)) > max_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large. Maximum allowed size is {settings.MAX_UPLOAD_SIZE}MB.",
+        )
+    await file.seek(0)
+
     # 3. Save File and Commit Database Record
     service = MediaService(db)
-    image = await service.upload_image(vendor_id, file)
-
-    # 4. Auto-generate tracking row
-    analysis_record = AIAnalysis(
-        vendor_id=vendor_id,
-        image_id=image.id,
-        image_url=image.storage_url,
-        batch_id=None,
-        provider="google",
-        model_name="gemini-3.6-flash",
-        status=AnalysisStatus.PROCESSING
-    )
-    db.add(analysis_record)
-    await db.commit()
-    await db.refresh(analysis_record)
-
-    # 5. Hand Off to Celery Task Queue, fallback to FastAPI BackgroundTasks out-of-the-box
+    image = None
     try:
-        analyze_product_image_task.delay(
-            str(image.id),
-            str(vendor_id),
-            str(analysis_record.id)
+        image = await service.upload_image(vendor_id, file, commit=False)
+        analysis_record = AIAnalysis(
+            vendor_id=vendor_id,
+            image_id=image.id,
+            image_url=image.storage_url,
+            batch_id=None,
+            provider=settings.AI_PROVIDER,
+            model_name="gemini-3.6-flash" if settings.AI_PROVIDER in ("google", "gemini") else settings.AI_PROVIDER,
+            status=AnalysisStatus.PROCESSING,
         )
+        db.add(analysis_record)
+        await db.commit()
+        await db.refresh(image)
+        await db.refresh(analysis_record)
     except Exception:
-        if background_tasks:
-            from app.infrastructure.queue.tasks import run_async_analysis
-            background_tasks.add_task(
-                run_async_analysis,
-                str(image.id),
-                str(vendor_id),
-                str(analysis_record.id)
-            )
+        await db.rollback()
+        if image is not None:
+            try:
+                await service.delete(image.storage_url)
+            except Exception:
+                pass
+        raise
 
-    return image
+    from app.modules.intelligence.router import run_background_analysis
+    background_tasks.add_task(
+        run_background_analysis,
+        str(image.id),
+        str(vendor_id),
+        str(analysis_record.id),
+    )
+
+    return {**ImageResponse.model_validate(image).model_dump(), "analysis_id": analysis_record.id}

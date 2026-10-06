@@ -122,7 +122,7 @@ class GeminiVisionProvider:
 
             image_part = types.Part.from_bytes(
                 data=image_bytes,
-                mime_type="image/jpeg",
+                mime_type=context.get("image_mime_type", "image/jpeg"),
             )
 
             # Generate schema dict and clean OpenAPI additionalProperties keyword

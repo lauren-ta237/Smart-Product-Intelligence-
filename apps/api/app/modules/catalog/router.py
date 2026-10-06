@@ -3,14 +3,16 @@ import uuid
 from typing import List, Optional
 import traceback
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import func, or_, select, tuple_
 from app.core.auth import get_current_vendor, get_current_vendor_optional
 from app.core.database import get_db
-from app.modules.catalog.models import Product
+from app.modules.catalog.models import DetectedProduct, Product
+from app.modules.intelligence.models import AIAnalysis
+from app.modules.products.schemas import ProductResponse
 
 router = APIRouter(
     prefix="/products",
@@ -54,12 +56,124 @@ class BatchUpdatePayload(BaseModel):
     market_region: Optional[str] = "Global"
 
 
+def normalize_batch_payload(payload):
+    """Accept the legacy array payload sent by the frontend and the wrapped object payload used by some API clients."""
+    if isinstance(payload, list):
+        products = []
+        for item in payload:
+            if isinstance(item, ProductUpdateItem):
+                products.append(item)
+            elif isinstance(item, dict):
+                products.append(ProductUpdateItem.model_validate(item))
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Each batch item must be an object with product fields.",
+                )
+        return BatchUpdatePayload(products=products)
+
+    if isinstance(payload, dict):
+        return BatchUpdatePayload.model_validate(payload)
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Batch payload must be either a list of products or an object containing a products list.",
+    )
+
+
+async def resolve_product_image_fields(
+    db: AsyncSession,
+    products: List[Product],
+) -> dict[uuid.UUID, dict[str, Optional[str]]]:
+    products_by_key = {}
+    products_by_identity = {}
+    source_keys = set()
+    identity_keys = set()
+    image_fields: dict[uuid.UUID, dict[str, Optional[str]]] = {}
+
+    for product in products:
+        image_url = product.image_url or ""
+        path_segments = {
+            segment.lower()
+            for segment in image_url.split("?")[0].split("/")
+            if segment
+        }
+        if path_segments.intersection({"crops", "cropped"}):
+            image_fields[product.id] = {"crop_url": image_url}
+            continue
+        if not product.vendor_id or not product.name:
+            continue
+
+        if image_url.startswith("blob:") or not image_url:
+            key = (product.vendor_id, product.name.lower())
+            identity_keys.add(key)
+            products_by_identity.setdefault(key, []).append(product)
+        else:
+            key = (product.vendor_id, product.name.lower(), image_url)
+            source_keys.add(key)
+            products_by_key.setdefault(key, []).append(product)
+
+    if not source_keys and not identity_keys:
+        return image_fields
+
+    conditions = []
+    if source_keys:
+        conditions.append(
+            tuple_(
+                AIAnalysis.vendor_id,
+                func.lower(DetectedProduct.name),
+                DetectedProduct.image_url,
+            ).in_(list(source_keys))
+        )
+    if identity_keys:
+        conditions.append(
+            tuple_(
+                AIAnalysis.vendor_id,
+                func.lower(DetectedProduct.name),
+            ).in_(list(identity_keys))
+        )
+
+    result = await db.execute(
+        select(DetectedProduct, AIAnalysis.vendor_id)
+        .join(AIAnalysis, AIAnalysis.id == DetectedProduct.analysis_id)
+        .where(or_(*conditions))
+    )
+
+    candidates: dict[uuid.UUID, set[tuple[Optional[str], Optional[str]]]] = {}
+    for detection, vendor_id in result.all():
+        source_key = (vendor_id, detection.name.lower(), detection.image_url)
+        identity_key = (vendor_id, detection.name.lower())
+        matched_products = list(products_by_key.get(source_key, []))
+        matched_products.extend(products_by_identity.get(identity_key, []))
+        for product in matched_products:
+            if detection.bounding_box == product.bounding_box:
+                candidates.setdefault(product.id, set()).add(
+                    (detection.image_url, detection.cropped_image_url)
+                )
+
+    for product in products:
+        records = candidates.get(product.id, set())
+        if not records:
+            continue
+
+        crop_urls = {crop_url for _, crop_url in records if crop_url}
+        if len(crop_urls) == 1:
+            image_fields.setdefault(product.id, {})["crop_url"] = next(iter(crop_urls))
+
+        if (product.image_url or "").startswith("blob:") or not product.image_url:
+            source_urls = {source_url for source_url, _ in records if source_url}
+            if len(source_urls) == 1:
+                image_fields.setdefault(product.id, {})["image_url"] = next(iter(source_urls))
+
+    return image_fields
+
+
 # ============================================================
 # GET PRODUCTS (WITH OR WITHOUT TRAILING SLASH SUPPORT)
 # ============================================================
 
-@router.get("")
-@router.get("/")
+@router.get("", response_model=List[ProductResponse])
+@router.get("/", response_model=List[ProductResponse])
 async def get_all_products(
     db: AsyncSession = Depends(get_db),
     vendor=Depends(get_current_vendor_optional),
@@ -73,7 +187,14 @@ async def get_all_products(
             stmt = stmt.where(Product.vendor_id == vendor_id)
             
         result = await db.execute(stmt)
-        return result.scalars().all()
+        products = result.scalars().all()
+        image_fields = await resolve_product_image_fields(db, products)
+        return [
+            ProductResponse.model_validate(product).model_copy(
+                update=image_fields.get(product.id, {"crop_url": None})
+            )
+            for product in products
+        ]
 
     except Exception as e:
         trace = traceback.format_exc()
@@ -112,12 +233,13 @@ async def search_catalog_inventory(
 
 @router.post("/batch-update")
 async def batch_update_products(
-    payload: BatchUpdatePayload,
+    payload: object = Body(...),
     db: AsyncSession = Depends(get_db),
     vendor_id=Depends(get_current_vendor)
 ):
     """Persist AI-detected products with normalized image paths."""
-    if not payload.products:
+    normalized = normalize_batch_payload(payload)
+    if not normalized.products:
         return {"status": "success", "message": "No products to process."}
 
     try:
@@ -144,9 +266,9 @@ async def batch_update_products(
             filename = clean.split("/")[-1]
             return f"uploads/{filename}"
 
-        default_img = clean_img_path(payload.image_url)
+        default_img = clean_img_path(normalized.image_url)
 
-        for item in payload.products:
+        for item in normalized.products:
             if not item.name:
                 continue
 

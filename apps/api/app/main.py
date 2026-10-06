@@ -1,11 +1,13 @@
 # app/main.py
 import asyncio
 import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.database import init_db, engine, Base
@@ -38,6 +40,14 @@ app = FastAPI(
     title="Smart Product Intelligence Platform",
     version="1.0",
     lifespan=lifespan 
+)
+
+os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
+app.mount(
+    "/static",
+    StaticFiles(directory=Path(__file__).resolve().parents[1] / "static", check_dir=False),
+    name="static",
 )
 
 # Safely parse allowed frontend origins from settings or environment

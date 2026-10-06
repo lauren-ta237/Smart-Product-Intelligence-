@@ -60,6 +60,7 @@ class ProductResponse(BaseModel):
     stock_quantity: Optional[int] = 0
     location: Optional[str] = None
     vendor_location: Optional[str] = None
+    crop_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

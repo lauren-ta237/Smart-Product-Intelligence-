@@ -27,11 +27,14 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str | None = None
 
     # --- CLOUD STORAGE PARAMETERS ---
-    STORAGE_TYPE: str = "local"  # "local" or "s3"
+    STORAGE_TYPE: str = "local"  # "local", "s3", or "cloudinary"
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: str | None = None
     AWS_BUCKET_NAME: str | None = None
     AWS_REGION: str = "us-east-1"
+    CLOUDINARY_CLOUD_NAME: str | None = None
+    CLOUDINARY_API_KEY: str | None = None
+    CLOUDINARY_API_SECRET: str | None = None
 
     # --- FACTORY REQUISITES ---
     GOOGLE_AI_KEY: str | None = Field(
