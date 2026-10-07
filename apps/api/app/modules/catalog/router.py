@@ -177,6 +177,12 @@ async def resolve_product_image_fields(
 async def get_all_products(
     db: AsyncSession = Depends(get_db),
     vendor=Depends(get_current_vendor_optional),
+    category: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None),
+    approved: Optional[bool] = Query(None),
+    q: Optional[str] = Query(None),
+    page: Optional[int] = Query(None, ge=1),
+    size: Optional[int] = Query(None, ge=1, le=100),
 ):
     try:
         # If vendor is optional, handle both cases safely
@@ -185,7 +191,30 @@ async def get_all_products(
         stmt = select(Product)
         if vendor_id:
             stmt = stmt.where(Product.vendor_id == vendor_id)
-            
+
+        if category is not None:
+            stmt = stmt.where(Product.category == category)
+        if brand is not None:
+            stmt = stmt.where(Product.brand == brand)
+        if approved is not None:
+            stmt = stmt.where(Product.approved == approved)
+        if q:
+            search_term = f"%{q}%"
+            stmt = stmt.where(
+                or_(
+                    Product.name.ilike(search_term),
+                    Product.description.ilike(search_term),
+                    Product.sku.ilike(search_term),
+                    Product.market_sku.ilike(search_term),
+                )
+            )
+
+        stmt = stmt.order_by(Product.created_at.desc(), Product.id.desc())
+        if page is not None or size is not None:
+            page_number = page or 1
+            page_size = size or 20
+            stmt = stmt.offset((page_number - 1) * page_size).limit(page_size)
+
         result = await db.execute(stmt)
         products = result.scalars().all()
         image_fields = await resolve_product_image_fields(db, products)
