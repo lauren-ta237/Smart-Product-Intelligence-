@@ -145,13 +145,13 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <span>📝</span> {isEdit ? "Edit Product" : "Manual Product Entry"}
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-sm text-slate-400 mt-1">
             Fill in the details below. Products are published immediately to the Buyer Marketplace.
           </p>
         </div>
 
         {errorMsg && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 text-xs flex items-center gap-2">
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 text-sm flex items-center gap-2">
             <span>⚠️</span> {errorMsg}
           </div>
         )}
@@ -162,7 +162,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
             {/* Visual Column */}
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                   Product Image *
                 </label>
                 <div 
@@ -175,19 +175,19 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
                     <>
                       <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <span className="bg-slate-900/90 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Change Photo</span>
+                        <span className="bg-slate-900/90 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest text-white">Change Photo</span>
                       </div>
                       {uploadingImage && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60">
                           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mb-2"></div>
-                          <span className="text-[9px] font-black uppercase">Syncing...</span>
+                          <span className="text-xs font-black uppercase">Syncing...</span>
                         </div>
                       )}
                     </>
                   ) : (
                     <>
                       <span className="text-3xl mb-2">{uploadingImage ? '⏳' : '📷'}</span>
-                      <span className="text-[10px] font-bold uppercase text-slate-400">
+                      <span className="text-xs font-bold uppercase text-slate-300">
                         {uploadingImage ? 'Uploading...' : 'Click to Upload Image'}
                       </span>
                     </>
@@ -203,7 +203,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                   Description
                 </label>
                 <textarea
@@ -219,7 +219,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
             {/* Attributes Column */}
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                   Product Name *
                 </label>
                 <input
@@ -234,7 +234,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                     Price (FCFA) *
                   </label>
                   <input
@@ -247,7 +247,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                  <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                     Stock Quantity *
                   </label>
                   <input
@@ -261,7 +261,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                   Category
                 </label>
                 <input
@@ -273,7 +273,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1.5 px-1">
+                <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5 px-1">
                   Brand (Optional)
                 </label>
                 <input
@@ -291,7 +291,7 @@ export default function ProductCreateForm({ onSuccess, onCancel }: ProductCreate
             <button
               type="submit"
               disabled={isCreating || isUpdating || uploadingImage}
-              className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-900/20 cursor-pointer"
+              className="flex-1 py-4 bg-brand hover:bg-brand-hover disabled:opacity-50 text-white font-black rounded-2xl text-xs uppercase tracking-widest transition-all shadow-xl shadow-orange-950/20 cursor-pointer"
             >
               {isCreating || isUpdating ? "Saving..." : isEdit ? "Save Changes" : "Confirm Listing"}
             </button>

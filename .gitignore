@@ -55,3 +55,6 @@ uploads/
 # Windows
 Thumbs.db
 /db
+*_dump.txt
+*.bak
+*.log

@@ -54,7 +54,7 @@ export default function Register() {
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
             Create Account
           </h1>
-          <p className="text-slate-400 text-xs mt-1">Register for Smart Product AI</p>
+          <p className="text-slate-400 text-sm mt-1">Register for Smart Product AI</p>
         </div>
 
         {error && (
@@ -67,7 +67,7 @@ export default function Register() {
         <div className="space-y-1">
           <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Account Type</label>
           <select
-            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl focus:outline-none focus:border-indigo-500/50 text-xs"
+            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
             value={form.role}
             onChange={(e) => updateField("role", e.target.value)}
           >
@@ -80,7 +80,7 @@ export default function Register() {
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Company/Store Name</label>
             <input
-              className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-xs"
+              className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
               placeholder="e.g. Douala Fresh Organic Store"
               value={form.company_name}
               onChange={(e) => updateField("company_name", e.target.value)}
@@ -91,7 +91,7 @@ export default function Register() {
         <div className="space-y-1">
           <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Email Address</label>
           <input
-            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-xs"
+            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
             placeholder="email@example.com"
             type="email"
             required
@@ -103,7 +103,7 @@ export default function Register() {
         <div className="space-y-1">
           <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Password</label>
           <input
-            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-xs"
+            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
             placeholder="••••••••"
             type="password"
             required
@@ -116,7 +116,7 @@ export default function Register() {
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Country</label>
             <input
-              className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-xs"
+              className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
               placeholder="e.g. Cameroon"
               value={form.country}
               onChange={(e) => updateField("country", e.target.value)}
@@ -125,7 +125,7 @@ export default function Register() {
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">City</label>
             <input
-              className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-xs"
+              className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
               placeholder="e.g. Yaounde"
               value={form.city}
               onChange={(e) => updateField("city", e.target.value)}
@@ -136,7 +136,7 @@ export default function Register() {
         <div className="space-y-1">
           <label className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Preferred Language</label>
           <select
-            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl focus:outline-none focus:border-indigo-500/50 text-xs"
+            className="w-full bg-white/[0.02] border border-white/10 text-white p-3 rounded-xl text-sm transition-all focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/10"
             value={form.language}
             onChange={(e) => updateField("language", e.target.value)}
           >
@@ -148,13 +148,13 @@ export default function Register() {
 
         <button
           disabled={loading}
-          className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white p-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40"
+          className="w-full bg-brand hover:bg-brand-hover text-white p-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 shadow-lg shadow-orange-950/40"
         >
           {loading ? "Creating Account..." : "Register"}
         </button>
 
         <div className="text-center pt-2">
-          <Link to="/login" className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold">
+          <Link to="/login" className="text-xs text-brand hover:underline font-semibold">
             Already have an account? Sign In
           </Link>
         </div>

@@ -1,1 +1,39 @@
 @import "tailwindcss";
+
+@theme {
+  --color-brand: #ff6000;
+  --color-brand-hover: #e54600;
+  --color-brand-light: #fff7ed;
+  --color-brand-muted: rgba(255, 96, 0, 0.12);
+  --color-brand-border: rgba(255, 96, 0, 0.28);
+  --color-deal-gold: #f59e0b;
+}
+
+:root {
+  --brand-orange: #ff6000;
+  --brand-orange-hover: #e54600;
+  --brand-orange-subtle: rgba(255, 96, 0, 0.08);
+  --brand-orange-border: rgba(255, 96, 0, 0.25);
+  --deal-gold: #f59e0b;
+}
+
+/* E-Commerce Brand Utility Classes (Alibaba Palette) */
+.bg-brand {
+  background-color: var(--brand-orange);
+}
+
+.hover\:bg-brand-hover:hover {
+  background-color: var(--brand-orange-hover);
+}
+
+.text-brand {
+  color: var(--brand-orange);
+}
+
+.border-brand {
+  border-color: var(--brand-orange-border);
+}
+
+.bg-brand-subtle {
+  background-color: var(--brand-orange-subtle);
+}
