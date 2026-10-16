@@ -81,7 +81,8 @@ async def get_buyer_orders(db: AsyncSession = Depends(get_db), user = Depends(ge
     """Fetches orders bought by the current user with details."""
     stmt = select(Order).where(Order.buyer_id == user.id).options(
         selectinload(Order.items), 
-        selectinload(Order.shipment)
+        selectinload(Order.shipment),
+        selectinload(Order.payments)
     ).order_by(Order.created_at.desc())
     result = await db.execute(stmt)
     orders = result.scalars().all()
@@ -91,10 +92,16 @@ async def get_buyer_orders(db: AsyncSession = Depends(get_db), user = Depends(ge
         response.append({
             "id": str(order.id),
             "status": order.status,
+            "date": order.created_at.isoformat(),
+            "payment_status": (
+                order.payments[0].status.value
+                if order.payments
+                else None
+            ),
             "total_price": float(order.total_price),
-            "carrier": order.shipment.carrier if order.shipment else "Pending",
-            "tracking_number": order.shipment.tracking_number if order.shipment else "Awaiting Dispatch",
-            "estimated_delivery": order.shipment.estimated_delivery if order.shipment else "Processing",
+            "carrier": order.shipment.carrier if order.shipment else None,
+            "tracking_number": order.shipment.tracking_number if order.shipment else None,
+            "estimated_delivery": order.shipment.estimated_delivery if order.shipment else None,
             "items": [{"product_name": i.product_name, "quantity": i.quantity, "price": float(i.price)} for i in order.items]
         })
     return response

@@ -4,13 +4,11 @@ import Review from "../pages/Review";
 import Login from "../features/auth/login";
 import Register from "../features/auth/register";
 import Dashboard from "../pages/dashboard";
-import Upload from "../features/upload/UploadDropzone";
 import BuyerOrders from "../app/buyer/orders/page";
 import AdminDashboard from "../pages/AdminDashboard";
 import CheckoutPage from "../pages/CheckoutPage";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
 import ProductCreateForm from "../components/products/ProductCreateForm";
-import ApiKeyManager from "../components/developer/ApiKeyManager";
 import ProductDetails from "../pages/ProductDetails";
 
 const buyerRoles = ["buyer", "customer"];
@@ -40,7 +38,10 @@ export default function Router() {
         <Route path="/buyer/checkout" element={<ProtectedRoute allowedRoles={buyerRoles}><CheckoutPage /></ProtectedRoute>} />
         <Route path="/buyer/orders" element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerOrders /></ProtectedRoute>} />
         <Route path="/buyer/orders/:orderId" element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerOrders /></ProtectedRoute>} />
-        <Route path="/buyer/profile" element={<ProtectedRoute allowedRoles={buyerRoles}><Dashboard viewMode="buyer" /></ProtectedRoute>} />
+        <Route path="/buyer/profile" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<ProtectedRoute allowedRoles={buyerRoles}><Dashboard viewMode="buyer" /></ProtectedRoute>} />
+        <Route path="/dashboard/orders" element={<Navigate to="/buyer/orders" replace />} />
+        <Route path="/dashboard/orders/:orderId" element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerOrders /></ProtectedRoute>} />
 
         {/* Vendor area */}
         <Route path="/vendor/dashboard" element={<ProtectedRoute allowedRoles={vendorRoles}><Dashboard viewMode="vendor" initialVendorSection="overview" /></ProtectedRoute>} />
@@ -76,7 +77,6 @@ export default function Router() {
         <Route path="/register" element={<Register />} />
 
         {/* Backward-compatible aliases */}
-        <Route path="/dashboard" element={<Navigate to="/vendor/dashboard" replace />} />
         <Route path="/checkout" element={<Navigate to="/buyer/checkout" replace />} />
         <Route path="/upload" element={<Navigate to="/vendor/ai/upload" replace />} />
         <Route path="/review" element={<Navigate to="/vendor/ai/review" replace />} />

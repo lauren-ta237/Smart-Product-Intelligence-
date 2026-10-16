@@ -37,9 +37,10 @@ export default function MarketplaceFooter() {
             <li><Link to="/products" className="transition hover:text-brand">Browse products</Link></li>
             <li><Link to="/buyer/orders" className="transition hover:text-brand">Track orders</Link></li>
           </ul>
-          <p className="text-xs leading-relaxed text-slate-500">
-            Contact details are not published in the app yet.
-          </p>
+          <address className="space-y-2 text-xs not-italic leading-relaxed text-slate-400">
+            <a href="mailto:nsambulauranta@gmail.com" className="block transition hover:text-brand">nsambulauranta@gmail.com</a>
+            <a href="tel:675965385" className="block transition hover:text-brand">675965385</a>
+          </address>
         </nav>
 
         <section className="space-y-4">

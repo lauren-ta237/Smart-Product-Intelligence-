@@ -7,6 +7,7 @@ import { useWishlist } from "../store/wishlist";
 import PromotionalCarousel, { type PromotionSlide } from "../components/marketplace/PromotionalCarousel";
 import MarketplaceProductCard from "../components/marketplace/MarketplaceProductCard";
 import MarketplaceFooter from "../components/marketplace/MarketplaceFooter";
+import BuyerSidebar from "../components/BuyerSidebar";
 
 import Upload from "../features/upload/UploadDropzone";
 import ProductCreateForm from "../components/products/ProductCreateForm";
@@ -225,7 +226,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
           </button>
           {user ? (
             <Link
-              to="/buyer/profile"
+              to="/dashboard"
               aria-label={`Your profile${user.email ? `: ${user.email}` : ""}`}
               className="flex h-10 w-10 items-center justify-center rounded-full bg-brand/15 text-brand transition hover:bg-brand/25"
             >
@@ -288,7 +289,8 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
   const [activeTab, setActiveTab] = useState<"marketplace" | "activity">(
     location.pathname.includes("wishlist") ||
-      location.pathname.includes("profile") ||
+      location.hash === "#profile" ||
+      location.hash === "#activity" ||
       location.pathname.includes("activity")
       ? "activity"
       : "marketplace"
@@ -320,6 +322,11 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
     (viewMode !== "buyer" &&
       location.pathname.startsWith("/vendor/") &&
       isVendorRole);
+  const showBuyerSidebar =
+    !isVendorView &&
+    (location.pathname === "/dashboard" ||
+      location.pathname === "/buyer/wishlist" ||
+      location.pathname === "/buyer/cart");
 
   const isVerified = Boolean(user?.is_verified);
 
@@ -648,7 +655,14 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 sm:p-10 font-sans antialiased">
-      <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
+      <div className={`mx-auto animate-in fade-in duration-300 ${showBuyerSidebar ? "grid max-w-[90rem] grid-cols-1 items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)]" : "max-w-7xl space-y-8"}`}>
+        {showBuyerSidebar && (
+          <BuyerSidebar
+            onDashboardClick={() => setActiveTab("marketplace")}
+            onProfileClick={() => setActiveTab("activity")}
+          />
+        )}
+        <div className={`min-w-0 space-y-8 ${showBuyerSidebar ? "lg:col-start-2 lg:row-start-1" : ""}`}>
         <MarketplaceHeader
           setCartOpen={setCartOpen}
           totalCartCount={totalCartCount}
@@ -1332,7 +1346,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
             <div className="space-y-6">
               {/* PROFILE */}
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
+                <h3 id="profile" className="text-sm font-bold text-white border-b border-white/5 pb-2">
                   Profile
                 </h3>
 
@@ -1570,6 +1584,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

@@ -12,6 +12,18 @@ export interface CreateOrderPayload {
   total_price?: number;
 }
 
+export interface BuyerOrder {
+  id: string;
+  date: string;
+  status: string;
+  payment_status?: string | null;
+  total_price: number;
+  tracking_number?: string | null;
+  carrier?: string | null;
+  estimated_delivery?: string | null;
+  items: OrderItemInput[];
+}
+
 // 🟢 FIXED: Updated to lowercase values matching the backend OrderStatus model
 export interface UpdateOrderStatusPayload {
   status: 
@@ -39,7 +51,7 @@ export const createOrder = async (payload: CreateOrderPayload) => {
 // Fetch buyer order history
 export const getBuyerOrders = async () => {
   const response = await api.get("/orders/buyer");
-  return response.data;
+  return response.data as BuyerOrder[];
 };
 
 // Fetch incoming vendor orders
