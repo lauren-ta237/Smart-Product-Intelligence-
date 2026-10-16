@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Bell, Heart, Search, ShoppingCart, Store, UserRound } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { useCart } from "../store/cart";
 import { useWishlist } from "../store/wishlist";
+import PromotionalCarousel, { type PromotionSlide } from "../components/marketplace/PromotionalCarousel";
+import MarketplaceProductCard from "../components/marketplace/MarketplaceProductCard";
+import MarketplaceFooter from "../components/marketplace/MarketplaceFooter";
 
 import Upload from "../features/upload/UploadDropzone";
 import ProductCreateForm from "../components/products/ProductCreateForm";
@@ -44,6 +48,7 @@ export interface RawProduct {
   stock_quantity?: number;
   vendor_id?: string;
   approved?: boolean;
+  created_at?: string;
 }
 
 export interface ProduceItem {
@@ -59,6 +64,7 @@ export interface ProduceItem {
   stock?: number;
   vendor_id?: string;
   approved?: boolean;
+  created_at?: string;
 }
 
 export interface CartItem extends ProduceItem {
@@ -104,11 +110,8 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
   selectedCategory,
   setSelectedCategory,
 }) => {
-  const user = useAuth((state) => state.user) as {
-    email?: string;
-    role?: string;
-    is_verified?: boolean;
-  } | null;
+  const user = useAuth((state) => state.user);
+  const wishlistCount = useWishlist((state) => state.items.length);
 
   const rawRole = String(user?.role || "").trim().toLowerCase();
   const isVendorUser = rawRole === "vendor";
@@ -150,139 +153,103 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
 
   // Public Buyer Marketplace Header (Route: /)
   return (
-    <header className="flex flex-col lg:flex-row justify-between lg:items-center gap-6 border-b border-white/10 pb-8">
-      <div className="w-full min-w-0 text-center lg:w-auto lg:text-left">
-        <div className="flex items-center justify-center lg:justify-start gap-2.5">
-          <span className="text-2xl">⚡</span>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase italic leading-tight">
-            SmartProduct<span className="text-brand">.AI</span>
-          </h1>
-          <span className="hidden sm:inline-block bg-brand text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm">
-            GLOBAL
-          </span>
-        </div>
-
-        <p className="text-slate-400 mt-1 text-[10px] font-bold uppercase tracking-widest font-mono">
-          AI-Verified Marketplace & Sourcing • Express Regional (FCFA)
-        </p>
-      </div>
-
-      <div className="flex bg-slate-900 border border-white/10 p-1 rounded-xl shrink-0 self-center lg:self-auto">
-        <button
-          onClick={() => setActiveTab("marketplace")}
-          className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-all cursor-pointer ${
-            activeTab === "marketplace"
-              ? "bg-brand text-white shadow-lg shadow-orange-950/40 font-bold"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Catalog & Deals
-        </button>
-
-        <button
-          onClick={() => setActiveTab("activity")}
-          className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-all cursor-pointer ${
-            activeTab === "activity"
-              ? "bg-brand text-white shadow-lg shadow-orange-950/40 font-bold"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          My Orders
-        </button>
-      </div>
-
-      {activeTab === "marketplace" && (
-        <div className="relative w-full max-w-md group lg:w-auto lg:flex-1">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg z-10 group-focus-within:text-brand transition-colors">
-            🔍
-          </span>
-
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search catalog (Electronics, Apparel, Tools...)"
-            className="w-full bg-slate-950 border-2 border-white/15 rounded-2xl pl-12 pr-10 py-3 text-sm text-white font-bold placeholder-slate-600 focus:outline-none focus:border-brand transition-all shadow-2xl"
-          />
-
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      )}
-
-      <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 lg:ml-auto lg:w-auto lg:justify-end">
-        {selectedCategory && setSelectedCategory && (
-          <a
-            href="#categories"
-            className="w-full justify-center bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-brand border border-white/10 px-2 py-3 rounded-xl text-[10px] sm:w-auto sm:px-4 sm:text-xs font-black uppercase transition-all flex items-center gap-1.5 shadow-sm"
-          >
-            <span>🏷️</span>
-            <span>Categories</span>
-          </a>
-        )}
-
-        {isVendorUser && (
-          <Link
-            to="/vendor/dashboard"
-            className="w-full justify-center bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 px-2 py-3 rounded-xl text-[10px] sm:w-auto sm:px-4 sm:text-xs font-black uppercase transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-          >
-            <span>🏪</span>
-            <span>Vendor Dashboard</span>
-          </Link>
-        )}
-
-        {isAdminUser && (
-          <Link
-            to="/admin"
-            className="w-full justify-center bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/30 px-2 py-3 rounded-xl text-[10px] sm:w-auto sm:px-4 sm:text-xs font-black uppercase transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-          >
-            <span>🛡️</span>
-            <span>Admin Panel</span>
-          </Link>
-        )}
-
-        <Link
-          to="/buyer/orders"
-          className="w-full justify-center bg-slate-900 hover:bg-slate-800 text-white border border-white/10 px-2 py-3 rounded-xl text-[10px] sm:w-auto sm:px-4 sm:text-xs font-black uppercase transition-all flex items-center gap-2 shadow-sm"
-        >
-          <span>📦</span>
-          <span>Track Orders</span>
-        </Link>
-
+    <header className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-xl">
+      <div className="flex items-center justify-between border-b border-white/5 bg-slate-950/60 px-4 py-2 text-[11px] font-semibold text-slate-400 sm:px-6">
+        <nav aria-label="Marketplace mode" className="flex items-center gap-3">
+          <Link to="/vendor/dashboard" className="hover:text-brand transition-colors">Sell</Link>
+          <span aria-hidden="true" className="text-slate-700">•</span>
+          <Link to="/" className="text-brand hover:text-orange-300 transition-colors">Buy</Link>
+        </nav>
         <button
           type="button"
-          onClick={() => setCartOpen(true)}
-          className="w-full justify-center bg-brand hover:bg-brand-hover text-white px-2 py-3 rounded-xl font-black uppercase flex items-center gap-2 sm:w-auto sm:gap-3 sm:px-5 transition-all shadow-xl shadow-orange-950/40 cursor-pointer text-[10px] sm:text-xs"
+          onClick={() => setActiveTab("activity")}
+          className="flex items-center gap-1.5 hover:text-brand transition-colors"
+          aria-label="View notifications and order activity"
         >
-          <span>🛒 Cart</span>
-
-          <span className="bg-white text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">
-            {totalCartCount}
-          </span>
+          <Bell size={14} />
+          <span>Notifications</span>
         </button>
-
-        {user ? (
-          <button
-            onClick={() => useAuth.getState().logout()}
-            className="w-full justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-2 py-3 rounded-xl text-[10px] sm:w-auto sm:px-4 sm:text-xs font-black uppercase cursor-pointer transition-all"
-          >
-            Logout
-          </button>
-        ) : (
-          <Link
-            to="/login"
-            className="w-full justify-center bg-brand hover:bg-brand-hover text-white px-2 py-3 rounded-xl text-[10px] sm:w-auto sm:px-6 sm:text-xs font-black uppercase cursor-pointer transition-all shadow-lg shadow-orange-900/40"
-          >
-            Sign In
-          </Link>
-        )}
       </div>
+
+      <div className="grid grid-cols-1 items-center gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[auto_minmax(220px,1fr)_auto] lg:gap-7">
+        <Link to="/" className="flex items-center justify-center lg:justify-start" aria-label="Smart Product Intelligence home">
+          <span className="text-xl font-black tracking-tight text-white sm:text-2xl">
+            SmartProduct<span className="text-brand">.AI</span>
+          </span>
+        </Link>
+
+        {activeTab === "marketplace" && (
+          <div className="relative min-w-0">
+            <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" });
+              }}
+              placeholder="Search products, categories, and more"
+              aria-label="Search marketplace products"
+              className="w-full rounded-full border border-white/10 bg-slate-950 py-3 pl-11 pr-11 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center justify-center gap-2 sm:gap-3">
+          <Link
+            to="/buyer/wishlist"
+            aria-label={`Wishlist, ${wishlistCount} saved items`}
+            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-slate-300 transition hover:border-brand/50 hover:text-brand"
+          >
+            <Heart size={19} />
+            {wishlistCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-brand px-1 text-center text-[9px] font-bold text-white">{wishlistCount}</span>}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            aria-label={`Open cart, ${totalCartCount} items`}
+            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-slate-300 transition hover:border-brand/50 hover:text-brand"
+          >
+            <ShoppingCart size={19} />
+            {totalCartCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-brand px-1 text-center text-[9px] font-bold text-white">{totalCartCount}</span>}
+          </button>
+          {user ? (
+            <Link
+              to="/buyer/profile"
+              aria-label={`Your profile${user.email ? `: ${user.email}` : ""}`}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-brand/15 text-brand transition hover:bg-brand/25"
+            >
+              <UserRound size={19} />
+            </Link>
+          ) : (
+            <Link to="/login" className="flex h-10 items-center gap-2 rounded-full bg-brand px-4 text-xs font-black uppercase text-white transition hover:bg-brand-hover">
+              <UserRound size={16} />
+              <span>Sign in</span>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      <nav aria-label="Main navigation" className="flex flex-wrap items-center justify-center gap-2 border-t border-white/5 px-4 py-3 sm:justify-start sm:px-6">
+        <button type="button" onClick={() => setActiveTab("marketplace")} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === "marketplace" ? "bg-brand text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>Catalog & deals</button>
+        <button type="button" onClick={() => setActiveTab("activity")} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === "activity" ? "bg-brand text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>My orders</button>
+        {selectedCategory && setSelectedCategory && (
+          <a href="#categories" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Categories</a>
+        )}
+        {isVendorUser && <Link to="/vendor/dashboard" className="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white"><Store size={14} /> Vendor dashboard</Link>}
+        {isAdminUser && <Link to="/admin" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Admin panel</Link>}
+        {user && <button type="button" onClick={() => useAuth.getState().logout()} className="ml-auto rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-red-500/10 hover:text-red-400">Sign out</button>}
+      </nav>
     </header>
   );
 };
@@ -398,10 +365,8 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
       const activePrice =
         item.price ?? item.suggested_price ?? item.unit_price;
 
-      const rawPrice = Number(activePrice);
-
-      const parsedPrice =
-        !isNaN(rawPrice) && rawPrice > 0 ? rawPrice : 1500.0;
+      const rawPrice = activePrice === undefined ? Number.NaN : Number(activePrice);
+      const parsedPrice = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : undefined;
 
       const finalUrl =
         item.crop_url ||
@@ -423,17 +388,18 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
         confidence_score:
           typeof item.confidence_score === "number"
             ? item.confidence_score
-            : 0.95,
+            : undefined,
         imageUrl: finalUrl,
         price: parsedPrice,
         bounding_box: item.bounding_box,
         boundingBoxes: item.boundingBoxes || item.bounding_boxes,
-        stock: item.stock_quantity ?? 50,
+        stock: item.stock_quantity,
         vendor_id: item.vendor_id
           ? String(item.vendor_id)
           : undefined,
         approved: item.approved ?? true,
         crop_url: item.crop_url || item.cropped_image_url || undefined,
+        created_at: item.created_at,
       };
     },
     []
@@ -508,11 +474,13 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
         return;
       }
 
+      if (product.price === undefined || product.price <= 0) return;
+
       addToCart({
         id: product.id,
         name: product.name,
-        price: product.price ?? 1500.0,
-        category: product.category ?? "Fresh Produce",
+        price: product.price,
+        category: product.category ?? "Uncategorized",
         icon: "🥦",
         vendor_id: product.vendor_id,
       });
@@ -576,8 +544,55 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
   }, [marketplaceProducts]);
 
   const newArrivals = useMemo(() => {
-    return [...marketplaceProducts].slice(-4).reverse();
+    return marketplaceProducts
+      .filter((product): product is ProduceItem & { created_at: string } =>
+        typeof product.created_at === "string" &&
+        Number.isFinite(Date.parse(product.created_at))
+      )
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      .slice(0, 4);
   }, [marketplaceProducts]);
+
+  const promotionSlides = useMemo<PromotionSlide[]>(() => {
+    // Temporary, non-discount copy until the backend provides published campaign data.
+    const catalogSlides: PromotionSlide[] = [
+      {
+        label: "Live marketplace",
+        title: "Browse the current product catalog",
+        description: "Explore products currently published by marketplace sellers. Prices and availability come from each listing.",
+        href: "/products",
+        action: "Explore products",
+      },
+      {
+        label: "Campaign updates",
+        title: "No published promotions yet",
+        description: "Special offers will appear here when verified campaign data is available. No unconfirmed discounts are advertised.",
+        href: "/products",
+        action: "Browse the catalog",
+      },
+      {
+        label: "Product discovery",
+        title: "Find your next favorite",
+        description: "Search current listings or explore categories to discover products available in the marketplace.",
+        href: "/products",
+        action: "Start exploring",
+      },
+    ];
+    const featuredSlides = featuredProducts.slice(0, 3).map((product) => ({
+      label: "Featured listing",
+      title: product.name,
+      description: [
+        product.category,
+        product.price !== undefined ? `${Math.round(product.price).toLocaleString()} FCFA` : undefined,
+      ].filter(Boolean).join(" · ") || "View this approved product listing and its seller-provided details.",
+      imageUrl: formatImageUrl(product.crop_url || product.imageUrl || ""),
+      imageAlt: product.name,
+      href: `/products/${encodeURIComponent(product.id)}`,
+      action: "View product",
+    }));
+
+    return [...featuredSlides, ...catalogSlides];
+  }, [featuredProducts]);
 
   // Vendor inventory specifically for the vendor's dashboard view
   const vendorInventoryProducts = useMemo(() => {
@@ -1071,164 +1086,26 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
              VIEW B: PUBLIC BUYER MARKETPLACE (Route: /)
              ========================================================= */
           <main className="space-y-10 animate-in fade-in duration-200">
-            {/* 1. HERO SECTION */}
-            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-black p-8 sm:p-12 shadow-2xl">
-              <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand/10 blur-3xl pointer-events-none" />
-              <div className="relative z-10 max-w-3xl space-y-4 sm:space-y-5">
-                <div className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand/10 px-3.5 py-1 text-xs font-bold text-brand uppercase tracking-wider">
-                  <span>⚡</span>
-                  <span>Next-Gen Global Marketplace</span>
-                </div>
-
-                <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
-                  Source <span className="text-brand">AI-Verified</span> Global Products with Instant Confidence
-                </h1>
-
-                <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
-                  Connect with verified suppliers, automate inventory cataloging with computer vision, and enjoy express regional fulfillment in FCFA with comprehensive Trade Assurance.
-                </p>
-
-                {/* Prominent Hero Search Bar */}
-                <div className="pt-2">
-                  <div className="flex flex-col sm:flex-row items-stretch gap-2 rounded-2xl border-2 border-white/15 bg-slate-950/90 p-1.5 focus-within:border-brand shadow-2xl transition-all">
-                    <div className="flex flex-1 items-center px-3">
-                      <span className="text-lg text-slate-400">🔍</span>
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search products by title, category, or specifications..."
-                        className="w-full bg-transparent px-3 py-2.5 text-sm sm:text-base font-medium text-white placeholder-slate-500 focus:outline-none"
-                      />
-                      {searchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setSearchQuery("")}
-                          className="text-xs text-slate-400 hover:text-white px-2 py-1 bg-white/10 rounded-md transition-colors cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      className="bg-brand hover:bg-brand-hover text-white font-bold text-xs sm:text-sm px-6 py-3 rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
-                    >
-                      Search Catalog
-                    </button>
-                  </div>
-
-                  {/* Trending Search Pills */}
-                  <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Trending:</span>
-                    {["Electronics", "Fashion", "Beauty", "Home & Living", "Accessories"].map((trend) => (
-                      <button
-                        key={trend}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCategory(trend);
-                          setSearchQuery("");
-                        }}
-                        className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:border-brand/40 hover:text-brand hover:bg-brand/10 transition-all cursor-pointer"
-                      >
-                        {trend}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {/* 1. PROMOTIONAL CAROUSEL */}
+            <section className="space-y-3">
+              <PromotionalCarousel slides={promotionSlides} />
+              <p className="px-1 text-[11px] text-slate-500">
+                Promotions are not published yet. Featured listings use live marketplace products; no discounts are implied.
+              </p>
             </section>
 
-            {/* 2. PROMOTIONAL BANNER & SOURCING PILLARS */}
-            <section className="space-y-4">
-              <div className="relative overflow-hidden rounded-2xl border border-orange-500/30 bg-gradient-to-r from-orange-950/40 via-amber-950/20 to-slate-900 p-6 sm:p-8 shadow-xl">
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-                  <div className="space-y-2 max-w-2xl">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-black uppercase text-white tracking-wider">
-                        Special Offer
-                      </span>
-                      <span className="text-xs font-bold text-deal-gold">Flash Wholesale Deals</span>
-                    </div>
-                    <h3 className="text-xl sm:text-2xl font-black text-white">
-                      Up to 35% Off AI-Verified Inventory • Bulk Deals & Factory Pricing
-                    </h3>
-                    <p className="text-xs sm:text-sm text-slate-300">
-                      Take advantage of special seasonal trade deals across Electronics, Fashion, and Home essentials with 0% risk payment protection.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCategory("all");
-                      const el = document.getElementById("catalog-grid");
-                      el?.scrollIntoView({ behavior: "smooth" });
-                    }}
-                    className="shrink-0 rounded-xl bg-white px-5 py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-slate-950 hover:bg-slate-200 transition-all shadow-lg cursor-pointer"
-                  >
-                    Explore Deals →
-                  </button>
-                </div>
+            {/* 2. PRODUCT CATEGORIES */}
+            <section id="categories" className="scroll-mt-6 space-y-4 rounded-3xl border border-white/10 bg-slate-900/50 p-5 sm:p-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-white sm:text-xl">Shop by category</h2>
+                <a href="#catalog-grid" onClick={() => {
+                  setSelectedCategory("all");
+                  setSearchQuery("");
+                }} className="shrink-0 text-xs font-bold text-brand transition hover:text-orange-300">
+                  See all categories <span aria-hidden="true">→</span>
+                </a>
               </div>
-
-              {/* Sourcing Trust Badges */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-xl shrink-0">
-                    🛡️
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">100% Trade Assurance</h4>
-                    <p className="text-[11px] text-slate-400">Payment escrow & refund guarantee</p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-xl shrink-0">
-                    ⚡
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">AI Computer Vision</h4>
-                    <p className="text-[11px] text-slate-400">Automated spec analysis & quality verification</p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-xl shrink-0">
-                    🚚
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">Regional Express (FCFA)</h4>
-                    <p className="text-[11px] text-slate-400">Fast doorstep fulfillment and live tracking</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* 3. PRODUCT CATEGORIES */}
-            <section id="categories" className="space-y-4 pt-2">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                    <span>🏷️</span>
-                    <span>Browse Product Categories</span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Select a category to filter live marketplace inventory
-                  </p>
-                </div>
-                {selectedCategory !== "all" && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCategory("all")}
-                    className="text-xs font-bold text-brand hover:underline cursor-pointer"
-                  >
-                    Reset to All Categories
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="flex gap-3 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-6">
                 {MARKETPLACE_CATEGORIES.map((cat) => {
                   const isActive = selectedCategory === cat.id;
                   return (
@@ -1236,166 +1113,102 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                       key={cat.id}
                       type="button"
                       onClick={() => setSelectedCategory(cat.id)}
-                      className={`flex flex-col items-center text-center p-4 rounded-2xl border transition-all cursor-pointer ${
+                      aria-pressed={isActive}
+                      className={`flex min-h-28 min-w-28 flex-col items-center justify-center gap-2 rounded-2xl border p-4 text-center transition sm:min-w-0 ${
                         isActive
-                          ? "bg-brand text-white border-brand shadow-lg shadow-orange-950/40"
-                          : "bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.06] hover:border-white/20"
+                          ? "border-brand/60 bg-brand/15 text-white shadow-lg shadow-orange-950/20"
+                          : "border-white/5 bg-slate-950/60 text-slate-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-slate-900"
                       }`}
                     >
-                      <span className="text-2xl mb-1.5">{cat.icon}</span>
-                      <span className="text-xs font-bold tracking-tight">{cat.label}</span>
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-2xl">{cat.icon}</span>
+                      <span className="text-xs font-bold leading-tight">{cat.label}</span>
                     </button>
                   );
                 })}
               </div>
+              {selectedCategory !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory("all")}
+                  className="text-xs font-bold text-brand hover:text-orange-300"
+                >
+                  Clear category filter
+                </button>
+              )}
             </section>
 
             {/* 4. FEATURED PRODUCTS */}
-            {featuredProducts.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                      <span>🌟</span>
-                      <span>Featured Products</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Top-ranked, verified products with highest AI inspection confidence
-                    </p>
-                  </div>
+            <section className="space-y-4">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white sm:text-2xl">Featured products</h2>
+                  <p className="mt-1 text-xs text-slate-400">Approved marketplace listings, prioritizing products with AI confidence data</p>
                 </div>
+                <Link to="/products" className="shrink-0 text-xs font-bold text-brand transition hover:text-orange-300">
+                  View all <span aria-hidden="true">→</span>
+                </Link>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {featuredProducts.map((prod) => (
-                    <div
-                      key={`feat-${prod.id}`}
-                      className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 relative group transition-all hover:bg-white/[0.07] hover:border-brand/40 shadow-xl flex flex-col justify-between"
-                    >
-                      <button
-                        onClick={() => handleToggleWishlist(prod)}
-                        className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm cursor-pointer hover:bg-slate-900 transition-colors"
-                      >
-                        {isInWishlist(prod.id) ? "⭐" : "☆"}
-                      </button>
-
-                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl flex items-center justify-center">
-                        <img
-                          src={formatImageUrl(
-                            prod.crop_url || prod.imageUrl || (prod as any).image_url
-                          )}
-                          alt={prod.name}
-                          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
-                          onError={(e) => (e.currentTarget.style.display = "none")}
-                        />
-                        <div className="absolute top-3 left-3 bg-brand/90 backdrop-blur-md px-2.5 py-0.5 rounded-md text-[9px] font-black text-white">
-                          FEATURED
-                        </div>
-                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black text-emerald-400 border border-emerald-500/20">
-                          ✨ AI VERIFIED
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                          {prod.category || "General"}
-                        </span>
-                        <h4 className="font-bold text-base text-white truncate">
-                          {prod.name}
-                        </h4>
-                      </div>
-
-                      <div className="flex justify-between items-center pt-2">
-                        <p className="text-base font-black text-brand">
-                          {Math.round(prod.price ?? 1500).toLocaleString()} FCFA
-                        </p>
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          Stock: {prod.stock ?? 25}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => handleAddToCart(prod)}
-                        className="w-full bg-brand hover:bg-brand-hover text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-md mt-2"
-                      >
-                        Add to Cart
-                      </button>
-                    </div>
+              {loading ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+                  {[0, 1, 2, 3].map((item) => <div key={item} className="h-72 animate-pulse rounded-2xl border border-white/5 bg-white/5" />)}
+                </div>
+              ) : featuredProducts.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+                  {featuredProducts.map((product) => (
+                    <MarketplaceProductCard
+                      key={`featured-${product.id}`}
+                      product={product}
+                      featured
+                      isWishlisted={isInWishlist(product.id)}
+                      onToggleWishlist={() => handleToggleWishlist(product)}
+                      onAddToCart={() => handleAddToCart(product)}
+                    />
                   ))}
                 </div>
-              </section>
-            )}
+              ) : (
+                <p className="rounded-2xl border border-dashed border-white/10 px-5 py-8 text-center text-sm text-slate-400">
+                  Featured listings will appear when approved products are available in the catalog.
+                </p>
+              )}
+            </section>
 
             {/* 5. NEW ARRIVALS */}
-            {newArrivals.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                      <span>✨</span>
-                      <span>New Arrivals</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Recently indexed catalog items fresh from verified merchants
-                    </p>
-                  </div>
+            <section id="new-arrivals" className="scroll-mt-6 space-y-4">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white sm:text-2xl">New arrivals</h2>
+                  <p className="mt-1 text-xs text-slate-400">Recently created listings, ordered by product creation date</p>
                 </div>
+                {newArrivals.length > 0 && (
+                  <Link to="/products" className="shrink-0 text-xs font-bold text-brand transition hover:text-orange-300">
+                    View all <span aria-hidden="true">→</span>
+                  </Link>
+                )}
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {newArrivals.map((prod) => (
-                    <div
-                      key={`new-${prod.id}`}
-                      className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 relative group transition-all hover:bg-white/[0.07] hover:border-brand/40 shadow-xl flex flex-col justify-between"
-                    >
-                      <button
-                        onClick={() => handleToggleWishlist(prod)}
-                        className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm cursor-pointer hover:bg-slate-900 transition-colors"
-                      >
-                        {isInWishlist(prod.id) ? "⭐" : "☆"}
-                      </button>
-
-                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl flex items-center justify-center">
-                        <img
-                          src={formatImageUrl(
-                            prod.crop_url || prod.imageUrl || (prod as any).image_url
-                          )}
-                          alt={prod.name}
-                          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
-                          onError={(e) => (e.currentTarget.style.display = "none")}
-                        />
-                        <div className="absolute top-3 left-3 bg-emerald-600/90 backdrop-blur-md px-2.5 py-0.5 rounded-md text-[9px] font-black text-white">
-                          NEW
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                          {prod.category || "General"}
-                        </span>
-                        <h4 className="font-bold text-base text-white truncate">
-                          {prod.name}
-                        </h4>
-                      </div>
-
-                      <div className="flex justify-between items-center pt-2">
-                        <p className="text-base font-black text-brand">
-                          {Math.round(prod.price ?? 1500).toLocaleString()} FCFA
-                        </p>
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          Stock: {prod.stock ?? 25}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => handleAddToCart(prod)}
-                        className="w-full bg-brand hover:bg-brand-hover text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-md mt-2"
-                      >
-                        Add to Cart
-                      </button>
-                    </div>
+              {loading ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+                  {[0, 1, 2, 3].map((item) => <div key={item} className="h-72 animate-pulse rounded-2xl border border-white/5 bg-white/5" />)}
+                </div>
+              ) : newArrivals.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+                  {newArrivals.map((product) => (
+                    <MarketplaceProductCard
+                      key={`arrival-${product.id}`}
+                      product={product}
+                      isWishlisted={isInWishlist(product.id)}
+                      onToggleWishlist={() => handleToggleWishlist(product)}
+                      onAddToCart={() => handleAddToCart(product)}
+                    />
                   ))}
                 </div>
-              </section>
-            )}
+              ) : (
+                <p className="rounded-2xl border border-dashed border-white/10 px-5 py-8 text-center text-sm text-slate-400">
+                  New arrivals will appear when product creation dates are available from the catalog.
+                </p>
+              )}
+            </section>
 
             {/* 6. ALL / FILTERED PRODUCTS GRID */}
             <section id="catalog-grid" className="bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
@@ -1442,59 +1255,15 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {filteredProducts.map((prod) => (
-                    <div
-                      key={prod.id}
-                      className="bg-white/5 border border-white/10 p-5 rounded-2xl space-y-3 relative group transition-all hover:bg-white/[0.07] hover:border-brand/40 shadow-lg flex flex-col justify-between"
-                    >
-                      <button
-                        onClick={() => handleToggleWishlist(prod)}
-                        className="absolute top-7 right-7 z-30 p-1.5 rounded-full bg-slate-950/80 border border-white/10 text-sm cursor-pointer hover:bg-slate-900 transition-colors"
-                      >
-                        {isInWishlist(prod.id) ? "⭐" : "☆"}
-                      </button>
-
-                      <div className="relative h-44 w-full overflow-hidden bg-slate-950 rounded-2xl flex items-center justify-center">
-                        <img
-                          src={formatImageUrl(
-                            prod.crop_url || prod.imageUrl || (prod as any).image_url
-                          )}
-                          alt={prod.name}
-                          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
-                          onError={(e) => (e.currentTarget.style.display = "none")}
-                        />
-                        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black text-emerald-400 border border-emerald-500/20">
-                          ✨ AI VERIFIED
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                          {prod.category || "General"}
-                        </span>
-                        <h3 className="font-bold text-lg text-white truncate">
-                          {prod.name}
-                        </h3>
-                      </div>
-
-                      <div className="flex justify-between items-center">
-                        <p className="text-base font-bold text-brand">
-                          {Math.round(prod.price ?? 1500).toLocaleString()} FCFA
-                        </p>
-
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          Stock: {prod.stock ?? 25} units
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => handleAddToCart(prod)}
-                        className="w-full bg-brand hover:bg-brand-hover text-white py-3 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-lg"
-                      >
-                        Add to Cart
-                      </button>
-                    </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+                  {filteredProducts.map((product) => (
+                    <MarketplaceProductCard
+                      key={product.id}
+                      product={product}
+                      isWishlisted={isInWishlist(product.id)}
+                      onToggleWishlist={() => handleToggleWishlist(product)}
+                      onAddToCart={() => handleAddToCart(product)}
+                    />
                   ))}
                 </div>
               )}
@@ -1617,12 +1386,12 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
                         <div className="flex gap-2">
                           <button
-                            onClick={() =>
-                              handleAddToCart(fav)
-                            }
-                            className="bg-emerald-600 px-2 py-1 rounded text-[9px] font-bold"
+                            type="button"
+                            onClick={() => handleAddToCart(fav)}
+                            disabled={fav.price === undefined || fav.price <= 0}
+                            className="rounded bg-emerald-600 px-2 py-1 text-[9px] font-bold disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                           >
-                            Buy
+                            {fav.price !== undefined && fav.price > 0 ? "Buy" : "Price unavailable"}
                           </button>
 
                           <button
@@ -1682,81 +1451,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
         {/* BUYER MARKETPLACE FOOTER */}
         {!isVendorView && (
-          <footer className="mt-16 border-t border-white/10 pt-12 pb-8 space-y-10">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
-              {/* Col 1: Platform Brand */}
-              <div className="lg:col-span-1 space-y-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">⚡</span>
-                  <span className="text-xl font-black text-white uppercase tracking-tighter">
-                    SmartProduct<span className="text-brand">.AI</span>
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  The intelligent global e-commerce sourcing platform. Empowering merchants and buyers with AI computer vision cataloging and regional fulfillment in FCFA.
-                </p>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Systems Operational</span>
-                </div>
-              </div>
-
-              {/* Col 2: About Us */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-white">About Us</h4>
-                <ul className="space-y-2 text-xs text-slate-400">
-                  <li><a href="#about" className="hover:text-brand transition-colors">Our Vision & Mission</a></li>
-                  <li><a href="#vision" className="hover:text-brand transition-colors">AI Vision Engine</a></li>
-                  <li><a href="#suppliers" className="hover:text-brand transition-colors">Verified Supplier Network</a></li>
-                  <li><a href="#careers" className="hover:text-brand transition-colors">Careers & Press</a></li>
-                </ul>
-              </div>
-
-              {/* Col 3: Help Center */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-white">Help Center</h4>
-                <ul className="space-y-2 text-xs text-slate-400">
-                  <li><Link to="/buyer/orders" className="hover:text-brand transition-colors">Track My Order</Link></li>
-                  <li><a href="#assurance" className="hover:text-brand transition-colors">Trade Assurance Guarantee</a></li>
-                  <li><a href="#shipping" className="hover:text-brand transition-colors">Shipping & Delivery Rates</a></li>
-                  <li><a href="#returns" className="hover:text-brand transition-colors">Returns & Refunds Policy</a></li>
-                </ul>
-              </div>
-
-              {/* Col 4: Trust & Policies */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-white">Trust & Policies</h4>
-                <ul className="space-y-2 text-xs text-slate-400">
-                  <li><a href="#privacy" className="hover:text-brand transition-colors">Privacy Policy</a></li>
-                  <li><a href="#terms" className="hover:text-brand transition-colors">Terms of Service</a></li>
-                  <li><a href="#security" className="hover:text-brand transition-colors">Security & Payment Escrow</a></li>
-                  <li><a href="#merchant-terms" className="hover:text-brand transition-colors">Vendor Agreement</a></li>
-                </ul>
-              </div>
-
-              {/* Col 5: Contact & Support */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-white">Contact & Support</h4>
-                <p className="text-xs text-slate-400">
-                  Have questions about wholesale sourcing or orders? Our global support team is available 24/7.
-                </p>
-                <div className="text-xs text-slate-300 font-mono space-y-1">
-                  <p>📧 support@smartproduct.ai</p>
-                  <p>📍 Central Sourcing Hub</p>
-                  <p>📞 +237 600 000 000</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4 text-[11px] text-slate-500">
-              <p>© 2026 Smart Product AI Platform. All rights reserved. Inspired by modern global e-commerce standards.</p>
-              <div className="flex items-center gap-4">
-                <span>🛡️ 100% Trade Assurance</span>
-                <span>🔒 256-bit SSL Protected</span>
-                <span>⚡ Instant AI Indexing</span>
-              </div>
-            </div>
-          </footer>
+          <MarketplaceFooter />
         )}
 
         {/* SHOPPING CART DRAWER */}
