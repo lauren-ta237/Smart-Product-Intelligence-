@@ -37,9 +37,9 @@ export default function MarketplaceFooter() {
             <li><Link to="/products" className="transition hover:text-brand">Browse products</Link></li>
             <li><Link to="/categories" className="transition hover:text-brand">Browse categories</Link></li>
             <li><Link to="/search" className="transition hover:text-brand">Search products</Link></li>
-            <li><Link to="/track-order" className="transition hover:text-brand">Track an order</Link></li>
+            <li><Link to="/dashboard/track-order" className="transition hover:text-brand">Track an order</Link></li>
             <li><Link to="/contact" className="transition hover:text-brand">Contact</Link></li>
-            <li><Link to="/buyer/orders" className="transition hover:text-brand">Order history</Link></li>
+            <li><Link to="/dashboard/orders" className="transition hover:text-brand">Order history</Link></li>
           </ul>
           <address className="space-y-2 text-xs not-italic leading-relaxed text-slate-400">
             <a href="mailto:nsambulauranta@gmail.com" className="block transition hover:text-brand">nsambulauranta@gmail.com</a>

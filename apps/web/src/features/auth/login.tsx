@@ -66,8 +66,9 @@ export default function Login() {
       } else if (rawRole === "vendor") {
         navigate(requestedPath.startsWith("/vendor/") ? requestedDestination : "/vendor/dashboard", { replace: true });
       } else {
-        const buyerDestination = requestedPath === "/dashboard" || requestedPath === "/buyer" ||
-          requestedPath.startsWith("/buyer/") || requestedPath === "/track-order";
+        const buyerDestination = requestedPath === "/dashboard" ||
+          requestedPath.startsWith("/dashboard/") || requestedPath === "/track-order" ||
+          requestedPath.startsWith("/buyer/");
         navigate(buyerDestination ? requestedDestination : "/dashboard", { replace: true });
       }
     } catch (err: unknown) {

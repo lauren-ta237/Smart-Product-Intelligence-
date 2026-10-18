@@ -7,9 +7,9 @@ import { useWishlist } from "../../store/wishlist";
 
 const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: "⌂", end: true },
-  { label: "My orders", to: "/buyer/orders", icon: "▤" },
-  { label: "Wishlist", to: "/buyer/wishlist", icon: "♡" },
-  { label: "Cart", to: "/buyer/cart", icon: "🛒" },
+  { label: "My orders", to: "/dashboard/orders", icon: "▤" },
+  { label: "Wishlist", to: "/dashboard/wishlist", icon: "♡" },
+  { label: "Cart", to: "/dashboard/cart", icon: "🛒" },
   { label: "Profile", to: "/dashboard#profile", icon: "○" },
 ];
 

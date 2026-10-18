@@ -61,7 +61,7 @@ export default function BuyerOrders() {
   if (error) {
     return (
       <div className="mx-auto max-w-4xl space-y-5 p-5 sm:p-8">
-        <Link to="/buyer/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Back to orders</Link>
+        <Link to="/dashboard/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Back to orders</Link>
         <div role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-sm text-red-300">{error}</div>
       </div>
     );
@@ -70,7 +70,7 @@ export default function BuyerOrders() {
   if (orderId && order) {
     return (
       <main className="mx-auto max-w-5xl space-y-6 p-5 sm:p-8">
-        <Link to="/buyer/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Back to order history</Link>
+        <Link to="/dashboard/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Back to order history</Link>
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-brand">Order details</p>
@@ -108,7 +108,7 @@ export default function BuyerOrders() {
           ) : (
             <p className="mt-3 text-sm text-slate-400">Shipment details have not been supplied yet. This page does not provide live carrier tracking.</p>
           )}
-          <Link to={`/track-order?orderId=${encodeURIComponent(order.id)}`} className="mt-5 inline-flex text-sm font-bold text-brand hover:text-orange-300">View tracking information →</Link>
+          <Link to={`/dashboard/track-order?orderId=${encodeURIComponent(order.id)}`} className="mt-5 inline-flex text-sm font-bold text-brand hover:text-orange-300">View tracking information →</Link>
         </section>
       </main>
     );
@@ -121,7 +121,7 @@ export default function BuyerOrders() {
           <h1 className="text-3xl font-black">My orders</h1>
           <p className="mt-2 text-sm text-slate-400">View order history and shipment information.</p>
         </div>
-        <Link to="/track-order" className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold hover:border-brand/40">Track an order</Link>
+        <Link to="/dashboard/track-order" className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold hover:border-brand/40">Track an order</Link>
       </header>
       {orders.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center">
@@ -134,7 +134,7 @@ export default function BuyerOrders() {
             <li key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <Link to={`/buyer/orders/${encodeURIComponent(item.id)}`} className="font-bold text-white hover:text-brand">Order {item.id}</Link>
+                  <Link to={`/dashboard/orders/${encodeURIComponent(item.id)}`} className="font-bold text-white hover:text-brand">Order {item.id}</Link>
                   <p className="mt-1 text-xs text-slate-500">{displayDate(item.created_at)} · {item.items.length} item{item.items.length === 1 ? "" : "s"}</p>
                 </div>
                 <div className="flex items-center gap-3">

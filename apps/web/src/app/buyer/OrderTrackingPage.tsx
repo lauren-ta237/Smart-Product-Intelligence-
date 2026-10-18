@@ -52,7 +52,7 @@ export default function OrderTrackingPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-7 p-5 sm:p-8">
       <header className="border-b border-white/10 pb-5">
-        <Link to="/buyer/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Order history</Link>
+        <Link to="/dashboard/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Order history</Link>
         <h1 className="mt-4 text-3xl font-black">Track an order</h1>
         <p className="mt-2 text-sm text-slate-400">Look up shipment details for an order in your account.</p>
       </header>
@@ -79,7 +79,7 @@ export default function OrderTrackingPage() {
           {!order.carrier && !order.tracking_number && (!order.estimated_delivery || order.estimated_delivery === "Pending Update") && (
             <p className="rounded-xl bg-slate-950/70 p-4 text-sm text-slate-400">The seller has not supplied shipment details yet. This service displays order data only and does not provide live carrier events.</p>
           )}
-          <Link to={`/buyer/orders/${encodeURIComponent(order.id)}`} className="inline-flex text-sm font-bold text-brand hover:text-orange-300">View order details →</Link>
+          <Link to={`/dashboard/orders/${encodeURIComponent(order.id)}`} className="inline-flex text-sm font-bold text-brand hover:text-orange-300">View order details →</Link>
         </section>
       )}
     </main>

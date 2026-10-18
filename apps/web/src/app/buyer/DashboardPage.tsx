@@ -82,9 +82,9 @@ export default function BuyerDashboardPage() {
         <>
           <section aria-label="Account summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { label: "Orders", value: loading ? "…" : orders.length, href: "/buyer/orders" },
-              { label: "Saved products", value: wishlistLoading ? "…" : wishlist.length, href: "/buyer/wishlist" },
-              { label: "Items in cart", value: cartCount, href: "/buyer/cart" },
+              { label: "Orders", value: loading ? "…" : orders.length, href: "/dashboard/orders" },
+              { label: "Saved products", value: wishlistLoading ? "…" : wishlist.length, href: "/dashboard/wishlist" },
+              { label: "Items in cart", value: cartCount, href: "/dashboard/cart" },
               { label: "Account", value: "View profile", href: "/dashboard#profile" },
             ].map((summary) => (
               <Link key={summary.label} to={summary.href} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-brand/40 hover:bg-white/[0.05]">
@@ -111,7 +111,7 @@ export default function BuyerDashboardPage() {
                 <h2 id="recent-orders-title" className="text-lg font-bold">Recent orders</h2>
                 <p className="mt-1 text-xs text-slate-500">Order information from your account.</p>
               </div>
-              <Link to="/buyer/orders" className="text-sm font-bold text-brand hover:text-orange-300">View all</Link>
+              <Link to="/dashboard/orders" className="text-sm font-bold text-brand hover:text-orange-300">View all</Link>
             </div>
             {loading ? (
               <p className="py-10 text-center text-sm text-slate-500" role="status">Loading your orders…</p>
@@ -127,7 +127,7 @@ export default function BuyerDashboardPage() {
                 {newestOrders.map((order) => (
                   <li key={order.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
                     <div className="min-w-0">
-                      <Link to={`/buyer/orders/${encodeURIComponent(order.id)}`} className="font-semibold text-white hover:text-brand">
+                      <Link to={`/dashboard/orders/${encodeURIComponent(order.id)}`} className="font-semibold text-white hover:text-brand">
                         Order {order.id.slice(0, 8)}
                       </Link>
                       <p className="mt-1 text-xs text-slate-500">

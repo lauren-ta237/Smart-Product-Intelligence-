@@ -57,7 +57,7 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
         return <Navigate to="/vendor/dashboard" replace />;
       }
       if (userRole === "buyer" || userRole === "customer") {
-        return <Navigate to="/buyer" replace />;
+        return <Navigate to="/dashboard" replace />;
       }
       return <Navigate to="/" replace />;
     }

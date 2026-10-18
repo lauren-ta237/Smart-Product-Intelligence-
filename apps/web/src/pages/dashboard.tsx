@@ -211,7 +211,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
 
         <div className="flex items-center justify-center gap-2 sm:gap-3">
           <Link
-            to="/buyer/wishlist"
+            to="/dashboard/wishlist"
             aria-label={`Wishlist, ${wishlistCount} saved items`}
             className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-slate-300 transition hover:border-brand/50 hover:text-brand"
           >
@@ -246,7 +246,7 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
 
       <nav aria-label="Main navigation" className="flex flex-wrap items-center justify-center gap-2 border-t border-white/5 px-4 py-3 sm:justify-start sm:px-6">
         <button type="button" onClick={() => setActiveTab("marketplace")} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === "marketplace" ? "bg-brand text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>Catalog & deals</button>
-        <Link to="/buyer/orders" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">My orders</Link>
+        <Link to="/dashboard/orders" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">My orders</Link>
         <Link to="/categories" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Categories</Link>
         <Link to="/contact" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Contact</Link>
         {isVendorUser && <Link to="/vendor/dashboard" className="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white"><Store size={14} /> Vendor dashboard</Link>}
@@ -357,7 +357,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
   }, [cartItems]);
 
   useEffect(() => {
-    if (location.pathname === "/buyer/cart") {
+    if (location.pathname === "/dashboard/cart") {
       setCartOpen(true);
     }
   }, [location.pathname]);
@@ -511,7 +511,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
   const handleProceedToCheckout = () => {
     setCartOpen(false);
-    navigate("/buyer/checkout");
+    navigate("/dashboard/checkout");
   };
 
   // ---------------------------------------------------------
@@ -1316,7 +1316,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                   {buyerOrders.map((ord) => (
                     <Link
                       key={ord.id}
-                      to={`/buyer/orders/${encodeURIComponent(ord.id)}`}
+                      to={`/dashboard/orders/${encodeURIComponent(ord.id)}`}
                       className="bg-slate-900/60 p-4 rounded-2xl border border-white/5 flex justify-between items-center"
                     >
                       <div>

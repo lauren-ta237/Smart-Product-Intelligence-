@@ -119,7 +119,7 @@ export default function CheckoutPage() {
             </p>
           </div>
           <button
-            onClick={() => navigate("/buyer")}
+            onClick={() => navigate("/products")}
             className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
           >
             ← Keep Shopping
@@ -138,7 +138,7 @@ export default function CheckoutPage() {
             <span className="text-5xl block">🛒</span>
             <h2 className="text-xl font-bold">Your Checkout Cart is Empty</h2>
             <button
-              onClick={() => navigate("/buyer")}
+              onClick={() => navigate("/products")}
               className="mt-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl tracking-wider uppercase transition-all shadow-lg cursor-pointer"
             >
               Browse Catalog
@@ -330,7 +330,7 @@ export default function CheckoutPage() {
               <div className="space-y-2 text-left">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Order reference{createdOrderIds.length === 1 ? "" : "s"}</p>
                 {createdOrderIds.map((orderId) => (
-                  <Link key={orderId} to={`/buyer/orders/${encodeURIComponent(orderId)}`} className="block break-all rounded-lg border border-white/10 p-3 font-mono text-xs text-brand hover:border-brand/40">
+                  <Link key={orderId} to={`/dashboard/orders/${encodeURIComponent(orderId)}`} className="block break-all rounded-lg border border-white/10 p-3 font-mono text-xs text-brand hover:border-brand/40">
                     {orderId}
                   </Link>
                 ))}
@@ -338,7 +338,7 @@ export default function CheckoutPage() {
             )}
             <button
               type="button"
-              onClick={() => navigate("/buyer")}
+              onClick={() => navigate("/products")}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 font-bold text-white rounded-xl text-xs uppercase tracking-wide cursor-pointer"
             >
               Back to Marketplace
