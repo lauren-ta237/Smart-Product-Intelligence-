@@ -1,208 +1,151 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, PackageCheck } from "lucide-react";
-import { getBuyerOrders } from "../../../api/orders";
-import BuyerSidebar from "../../../components/BuyerSidebar";
-import { useAuth } from "../../../store/auth";
-import VendorOrders from "../../../components/vendor/VendorOrders";
+import { useEffect, useState } from "react";
+import { isAxiosError } from "axios";
+import { Link, useParams } from "react-router-dom";
+import { getBuyerOrder, getBuyerOrders, type OrderRecord } from "../../../api/orders";
 
-function formatDate(value: string) {
+function displayDate(value?: string | null) {
+  if (!value) return "Date unavailable";
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value || "Date unavailable"
-    : date.toLocaleString();
-}
-
-function formatMoney(value: number) {
-  return `${Number(value).toLocaleString()} FCFA`;
-}
-
-function StatusBadge({ status }: { status?: string | null }) {
-  return (
-    <span className="inline-flex rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs font-bold capitalize text-brand">
-      {status?.replaceAll("_", " ") || "Unknown"}
-    </span>
-  );
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString();
 }
 
 export default function BuyerOrders() {
-  const navigate = useNavigate();
   const { orderId } = useParams();
-  const { user } = useAuth();
-  const isVendor = user?.role?.toLowerCase() === "vendor";
+  const [loadState, setLoadState] = useState<{
+    key: string | null;
+    orders: OrderRecord[];
+    order: OrderRecord | null;
+    loading: boolean;
+    error: string | null;
+  }>({ key: null, orders: [], order: null, loading: true, error: null });
+  const requestKey = orderId ?? null;
 
-  const {
-    data: orders = [],
-    isPending: loading,
-    isError: error,
-    refetch,
-  } = useQuery({
-    queryKey: ["buyer-orders", user?.id],
-    queryFn: getBuyerOrders,
-    enabled: !isVendor,
-  });
+  useEffect(() => {
+    let active = true;
+    const request = orderId ? getBuyerOrder(orderId) : getBuyerOrders();
+    request
+      .then((result) => {
+        if (!active) return;
+        setLoadState({
+          key: requestKey,
+          orders: orderId ? [] : result as OrderRecord[],
+          order: orderId ? result as OrderRecord : null,
+          loading: false,
+          error: null,
+        });
+      })
+      .catch((requestError: unknown) => {
+        if (!active) return;
+        if (isAxiosError(requestError) && requestError.response?.status === 404) {
+          setLoadState({ key: requestKey, orders: [], order: null, loading: false, error: "That order was not found in your account." });
+        } else if (isAxiosError(requestError) && requestError.response?.status === 422) {
+          setLoadState({ key: requestKey, orders: [], order: null, loading: false, error: "The order ID is not valid." });
+        } else {
+          setLoadState({ key: requestKey, orders: [], order: null, loading: false, error: "Your order information could not be loaded. Please try again." });
+        }
+      })
+    return () => {
+      active = false;
+    };
+  }, [orderId, requestKey]);
 
-  if (isVendor) {
+  const loading = loadState.key !== requestKey || loadState.loading;
+  const error = loadState.key === requestKey ? loadState.error : null;
+  const order = loadState.key === requestKey ? loadState.order : null;
+  const orders = loadState.key === requestKey ? loadState.orders : [];
+
+  if (loading) {
+    return <div className="p-8 text-sm text-slate-400" role="status">Loading order information…</div>;
+  }
+
+  if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 p-6 text-white antialiased md:p-10">
-        <div className="mx-auto max-w-7xl space-y-8">
-          <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
-            <div>
-              <h1 className="text-3xl font-bold">Track Orders</h1>
-              <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">Order fulfillment management (FCFA)</p>
-            </div>
-            <button
-              onClick={() => navigate("/vendor/dashboard")}
-              className="cursor-pointer rounded-xl border border-white/10 bg-white/5 px-6 py-2.5 text-xs font-black uppercase"
-            >
-              Back to Dashboard
-            </button>
-          </header>
-          <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-2xl">
-            <VendorOrders />
-          </div>
-        </div>
+      <div className="mx-auto max-w-4xl space-y-5 p-5 sm:p-8">
+        <Link to="/buyer/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Back to orders</Link>
+        <div role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-sm text-red-300">{error}</div>
       </div>
     );
   }
 
-  const order = orderId ? orders.find((item) => item.id === orderId) : undefined;
+  if (orderId && order) {
+    return (
+      <main className="mx-auto max-w-5xl space-y-6 p-5 sm:p-8">
+        <Link to="/buyer/orders" className="text-sm font-semibold text-brand hover:text-orange-300">← Back to order history</Link>
+        <header className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-brand">Order details</p>
+            <h1 className="mt-2 break-all text-2xl font-black">Order {order.id}</h1>
+            <p className="mt-2 text-sm text-slate-400">Placed {displayDate(order.created_at)}</p>
+          </div>
+          <span className="rounded-full border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-bold uppercase text-brand">{order.status.replaceAll("_", " ")}</span>
+        </header>
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+          <h2 className="text-lg font-bold">Items</h2>
+          {order.items.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-400">No items are available for this order.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-white/5">
+              {order.items.map((item, index) => (
+                <li key={`${item.product_name}-${index}`} className="flex flex-wrap justify-between gap-2 py-4 text-sm">
+                  <span className="text-slate-200">{item.product_name} <span className="text-slate-500">× {item.quantity}</span></span>
+                  <span className="font-semibold text-slate-200">{(item.price * item.quantity).toLocaleString()} FCFA</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-4 flex justify-between border-t border-white/10 pt-4 font-bold">
+            <span>Total</span><span>{Number(order.total_price).toLocaleString()} FCFA</span>
+          </div>
+        </section>
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+          <h2 className="text-lg font-bold">Shipment information</h2>
+          {order.carrier || order.tracking_number || (order.estimated_delivery && order.estimated_delivery !== "Pending Update") ? (
+            <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+              {order.carrier && <div><dt className="text-xs text-slate-500">Carrier</dt><dd className="mt-1 text-slate-200">{order.carrier}</dd></div>}
+              {order.tracking_number && <div><dt className="text-xs text-slate-500">Tracking number</dt><dd className="mt-1 break-all font-mono text-slate-200">{order.tracking_number}</dd></div>}
+              {order.estimated_delivery && order.estimated_delivery !== "Pending Update" && <div><dt className="text-xs text-slate-500">Estimated delivery</dt><dd className="mt-1 text-slate-200">{order.estimated_delivery}</dd></div>}
+            </dl>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">Shipment details have not been supplied yet. This page does not provide live carrier tracking.</p>
+          )}
+          <Link to={`/track-order?orderId=${encodeURIComponent(order.id)}`} className="mt-5 inline-flex text-sm font-bold text-brand hover:text-orange-300">View tracking information →</Link>
+        </section>
+      </main>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 text-white antialiased sm:p-6 lg:p-10">
-      <div className="mx-auto grid max-w-[90rem] grid-cols-1 items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
-        <BuyerSidebar />
-        <main className="min-w-0 space-y-6 lg:col-start-2 lg:row-start-1">
-          <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-brand">Buyer dashboard</p>
-              <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{orderId ? "Order details" : "My orders"}</h1>
-              <p className="mt-1 text-sm text-slate-400">
-                {orderId ? "Review your order and available fulfillment updates." : "Review order status and fulfillment details."}
-              </p>
-            </div>
-            {orderId && (
-              <Link
-                to="/buyer/orders"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-              >
-                <ArrowLeft size={16} /> Back to orders
-              </Link>
-            )}
-          </header>
-
-          {loading ? (
-            <div role="status" className="rounded-2xl border border-white/10 bg-white/[0.03] p-10 text-center text-sm text-slate-400">
-              Loading your orders…
-            </div>
-          ) : error ? (
-            <div role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 text-center">
-              <p className="font-semibold text-white">Your orders could not be loaded.</p>
-              <p className="mt-2 text-sm text-slate-400">Please check your connection and try again.</p>
-              <button
-                type="button"
-                onClick={() => void refetch()}
-                className="mt-5 rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-hover"
-              >
-                Try again
-              </button>
-            </div>
-          ) : orderId && !order ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-10 text-center">
-              <PackageCheck size={32} className="mx-auto text-slate-500" />
-              <h2 className="mt-4 text-lg font-bold">Order not found</h2>
-              <p className="mt-2 text-sm text-slate-400">This order is unavailable or does not belong to your account.</p>
-              <Link to="/buyer/orders" className="mt-5 inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-hover">
-                View my orders
-              </Link>
-            </div>
-          ) : order ? (
-            <section className="space-y-6 rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-2xl sm:p-8">
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-6">
+    <main className="mx-auto max-w-5xl space-y-6 p-5 sm:p-8">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-5">
+        <div>
+          <h1 className="text-3xl font-black">My orders</h1>
+          <p className="mt-2 text-sm text-slate-400">View order history and shipment information.</p>
+        </div>
+        <Link to="/track-order" className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold hover:border-brand/40">Track an order</Link>
+      </header>
+      {orders.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center">
+          <p className="text-sm text-slate-300">You have no orders yet.</p>
+          <Link to="/products" className="mt-3 inline-block text-sm font-bold text-brand hover:text-orange-300">Browse products</Link>
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {orders.map((item) => (
+            <li key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Order number</p>
-                  <p className="mt-2 break-all font-mono text-sm text-slate-200">{order.id}</p>
-                  <p className="mt-2 text-sm text-slate-400">Placed {formatDate(order.date)}</p>
+                  <Link to={`/buyer/orders/${encodeURIComponent(item.id)}`} className="font-bold text-white hover:text-brand">Order {item.id}</Link>
+                  <p className="mt-1 text-xs text-slate-500">{displayDate(item.created_at)} · {item.items.length} item{item.items.length === 1 ? "" : "s"}</p>
                 </div>
-                <StatusBadge status={order.status} />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/5 bg-slate-950/60 p-5">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Payment status</p>
-                  <p className="mt-2 text-sm font-semibold capitalize text-slate-100">
-                    {order.payment_status?.toLowerCase() || "Unavailable"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/5 bg-slate-950/60 p-5">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Order status</p>
-                  <div className="mt-2"><StatusBadge status={order.status} /></div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold">{Number(item.total_price).toLocaleString()} FCFA</span>
+                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-bold uppercase text-slate-300">{item.status.replaceAll("_", " ")}</span>
                 </div>
               </div>
-
-              <div>
-                <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-slate-300">Products</h2>
-                <div className="divide-y divide-white/10 rounded-2xl border border-white/10">
-                  {order.items.map((item, index) => (
-                    <div key={`${item.product_id ?? item.product_name}-${index}`} className="flex flex-wrap items-center justify-between gap-3 p-4">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-white">{item.product_name}</p>
-                        <p className="mt-1 text-sm text-slate-400">Quantity: {item.quantity}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-mono text-sm text-slate-200">{formatMoney(item.price)} each</p>
-                        <p className="mt-1 text-xs text-slate-500">Line total: {formatMoney(item.price * item.quantity)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {(order.carrier || order.tracking_number || order.estimated_delivery) && (
-                <section className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
-                  <h2 className="text-sm font-bold uppercase tracking-widest text-slate-300">Delivery information</h2>
-                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                    {order.carrier && <div><dt className="text-slate-500">Carrier</dt><dd className="mt-1 text-slate-200">{order.carrier}</dd></div>}
-                    {order.tracking_number && <div><dt className="text-slate-500">Tracking number</dt><dd className="mt-1 break-all font-mono text-slate-200">{order.tracking_number}</dd></div>}
-                    {order.estimated_delivery && <div><dt className="text-slate-500">Estimated delivery</dt><dd className="mt-1 text-slate-200">{order.estimated_delivery}</dd></div>}
-                  </dl>
-                </section>
-              )}
-
-              <div className="flex items-center justify-between border-t border-white/10 pt-5">
-                <span className="font-semibold text-slate-300">Order total</span>
-                <span className="text-xl font-black text-emerald-400">{formatMoney(order.total_price)}</span>
-              </div>
-            </section>
-          ) : orders.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center">
-              <PackageCheck size={32} className="mx-auto text-slate-500" />
-              <h2 className="mt-4 font-bold text-white">No orders yet</h2>
-              <p className="mt-2 text-sm text-slate-400">Your completed checkouts will appear here.</p>
-              <Link to="/" className="mt-5 inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-hover">
-                Browse products
-              </Link>
-            </div>
-          ) : (
-            <section className="space-y-3">
-              {orders.map((item) => (
-                <Link
-                  key={item.id}
-                  to={`/dashboard/orders/${encodeURIComponent(item.id)}`}
-                  className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-brand/40 hover:bg-white/[0.05] sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-sm font-semibold text-white">Order {item.id}</p>
-                    <p className="mt-1 text-sm text-slate-400">{formatDate(item.date)}</p>
-                  </div>
-                  <StatusBadge status={item.status} />
-                  <span className="font-mono font-bold text-emerald-400">{formatMoney(item.total_price)}</span>
-                </Link>
-              ))}
-            </section>
-          )}
-        </main>
-      </div>
-    </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
   );
 }

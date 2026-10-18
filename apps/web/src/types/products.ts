@@ -18,6 +18,7 @@ export interface Product {
     sku_cm: string | null;
     market_sku: string | null;
     image_url: string | null;
+    crop_url?: string | null;
     image_id: string | null;
     bounding_box: ProductBoundingBox | null;
     approved: boolean;

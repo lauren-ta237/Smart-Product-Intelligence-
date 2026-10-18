@@ -12,16 +12,24 @@ export interface CreateOrderPayload {
   total_price?: number;
 }
 
-export interface BuyerOrder {
+export interface OrderItem {
+  product_name: string;
+  quantity: number;
+  price: number;
+}
+
+export interface OrderRecord {
   id: string;
-  date: string;
+  created_at?: string | null;
   status: string;
-  payment_status?: string | null;
   total_price: number;
-  tracking_number?: string | null;
   carrier?: string | null;
+  tracking_number?: string | null;
   estimated_delivery?: string | null;
-  items: OrderItemInput[];
+  items: OrderItem[];
+  buyer_name?: string;
+  buyer_contact?: string;
+  delivery_address?: string;
 }
 
 // 🟢 FIXED: Updated to lowercase values matching the backend OrderStatus model
@@ -49,14 +57,24 @@ export const createOrder = async (payload: CreateOrderPayload) => {
 };
 
 // Fetch buyer order history
-export const getBuyerOrders = async () => {
-  const response = await api.get("/orders/buyer");
-  return response.data as BuyerOrder[];
+export const getBuyerOrders = async (): Promise<OrderRecord[]> => {
+  const response = await api.get<OrderRecord[]>("/orders/buyer");
+  return response.data;
+};
+
+export const getBuyerOrder = async (orderId: string): Promise<OrderRecord> => {
+  const response = await api.get<OrderRecord>(`/orders/buyer/${encodeURIComponent(orderId)}`);
+  return response.data;
 };
 
 // Fetch incoming vendor orders
-export const getVendorOrders = async () => {
-  const response = await api.get("/orders/vendor");
+export const getVendorOrders = async (): Promise<OrderRecord[]> => {
+  const response = await api.get<OrderRecord[]>("/orders/vendor");
+  return response.data;
+};
+
+export const getVendorOrder = async (orderId: string): Promise<OrderRecord> => {
+  const response = await api.get<OrderRecord>(`/orders/vendor/${encodeURIComponent(orderId)}`);
   return response.data;
 };
 

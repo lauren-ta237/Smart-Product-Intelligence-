@@ -256,6 +256,27 @@ async def search_catalog_inventory(
         )
 
 
+@router.get("/{product_id}", response_model=ProductResponse)
+async def get_product_by_id(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.approved.is_(True),
+        )
+    )
+    product = result.scalar_one_or_none()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+
+    image_fields = await resolve_product_image_fields(db, [product])
+    return ProductResponse.model_validate(product).model_copy(
+        update=image_fields.get(product.id, {"crop_url": None})
+    )
+
+
 # ============================================================
 # BATCH UPDATE PRODUCTS
 # ============================================================

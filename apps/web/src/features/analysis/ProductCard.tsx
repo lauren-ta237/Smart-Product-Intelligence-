@@ -40,14 +40,12 @@ export default function ProductCard({
   product,
   onUpdate,
 }: Props) {
-  const name =
-    product.name ||
-    (product as any).product_name ||
-    "Unnamed Product";
-
   const imageUrl = getProductImageUrl(product);
+  const originalName =
+    product.name || (product as any).product_name || "Unnamed Product";
 
   const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState(originalName);
   const [brand, setBrand] = useState(product.brand || "");
   const [category, setCategory] = useState(product.category || "");
   const [description, setDescription] = useState(product.description || "");
@@ -64,6 +62,7 @@ export default function ProductCard({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setName(originalName);
     setBrand(product.brand || "");
     setCategory(product.category || "");
     setDescription(product.description || "");
@@ -71,7 +70,16 @@ export default function ProductCard({
     setLocation(product.location || "");
     setPrice(product.price ?? 0.0);
     setStockQuantity(product.stock_quantity ?? 0);
-  }, [product]);
+  }, [
+    originalName,
+    product.brand,
+    product.category,
+    product.description,
+    product.location,
+    product.price,
+    product.sku,
+    product.stock_quantity,
+  ]);
 
   useEffect(() => {
     if (name.trim().length < 2 || !isEditing) {
@@ -118,6 +126,7 @@ export default function ProductCard({
 
   const handleCancel = () => {
     setIsEditing(false);
+    setName(originalName);
     setBrand(product.brand || "");
     setCategory(product.category || "");
     setDescription(product.description || "");
@@ -157,7 +166,7 @@ export default function ProductCard({
             <input
               type="text"
               value={name}
-              readOnly
+              onChange={(event) => setName(event.target.value)}
               className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white"
             />
 

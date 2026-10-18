@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../../api/client";
-import { useAuth } from "../../store/auth";
 import { useQueryClient } from "@tanstack/react-query";
 
 export interface VendorOrder {
   id: string;
-  date: string;
+  created_at?: string | null;
   status: string;
   total_price: number;
   tracking_number?: string;
@@ -13,17 +13,17 @@ export interface VendorOrder {
   estimated_delivery?: string;
   buyer_name?: string;
   buyer_contact?: string;
-  delivery_address?: string;
   items: Array<{ product_name: string; quantity: number; price: number }>;
 }
 
 export default function VendorOrders() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [orders, setOrders] = useState<VendorOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<VendorOrder | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [carrierInput, setCarrierInput] = useState("");
   const [trackingInput, setTrackingInput] = useState("");
@@ -32,7 +32,9 @@ export default function VendorOrders() {
     try {
       const res = await api.get("/orders/vendor");
       setOrders(res.data);
+      setError(null);
     } catch (err) {
+      setError("Vendor orders could not be loaded. Please retry.");
       console.error("Fulfillment Panel Error:", err);
     } finally {
       setLoading(false);
@@ -40,7 +42,24 @@ export default function VendorOrders() {
   };
 
   useEffect(() => {
-    fetchOrders();
+    let active = true;
+    api.get("/orders/vendor")
+      .then((res) => {
+        if (active) {
+          setOrders(res.data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setError("Vendor orders could not be loaded. Please retry.");
+          console.error("Fulfillment Panel Error:", err);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
   }, []);
 
   const handleOpenShippingModal = (order: VendorOrder) => {
@@ -51,28 +70,31 @@ export default function VendorOrders() {
 
   const updateStatus = async (orderId: string, status: string, tracking?: string, carrier?: string) => {
     setUpdating(true);
+    setActionError(null);
     try {
       await api.patch(`/orders/${orderId}/status`, {
         status,
         tracking_number: tracking !== undefined ? tracking : selectedOrder?.tracking_number,
         carrier: carrier !== undefined ? carrier : selectedOrder?.carrier,
-        estimated_delivery: "3-5 Business Days"
       });
-      fetchOrders();
+      await fetchOrders();
       setSelectedOrder(null);
       await queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "active" });
-    } catch (err) {
-      alert("Failed to update status.");
+    } catch {
+      setActionError("Failed to update order status. Please try again.");
     } finally {
       setUpdating(false);
     }
   };
 
   if (loading) return <div className="animate-pulse text-slate-500 text-xs uppercase font-black">Syncing ledger...</div>;
+  if (error) return <div role="alert" className="space-y-3 text-sm text-red-300"><p>{error}</p><button type="button" onClick={() => { setLoading(true); void fetchOrders(); }} className="font-bold underline">Retry</button></div>;
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold tracking-tight">Order Fulfillment Ledger (FCFA)</h2>
+      {actionError && <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{actionError}</p>}
+      {orders.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-400">No orders have been placed with your store yet.</p>}
       <div className="grid grid-cols-1 gap-4">
         {orders.map(order => {
           const currentStatus = order.status ? order.status.toLowerCase() : "";
@@ -83,7 +105,7 @@ export default function VendorOrders() {
                 <div className="space-y-1">
                   <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">ID: {order.id}</p>
                   <h4 className="font-bold text-slate-200">{order.buyer_name} ({order.buyer_contact})</h4>
-                  <p className="text-xs text-slate-400">📍 {order.delivery_address}</p>
+                  {order.created_at && <p className="text-xs text-slate-500">{new Date(order.created_at).toLocaleDateString()}</p>}
                 </div>
                 <div className="text-right">
                   <p className="text-emerald-400 font-black text-xl">{Math.round(order.total_price).toLocaleString()} FCFA</p>
@@ -101,6 +123,9 @@ export default function VendorOrders() {
               </div>
 
               <div className="flex flex-wrap gap-2 pt-4">
+                <Link to={`/vendor/orders/${encodeURIComponent(order.id)}`} className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 transition hover:border-brand/40 hover:text-white">
+                  Order details
+                </Link>
                 {currentStatus === "pending" && (
                   <button disabled={updating} onClick={() => updateStatus(order.id, "accepted")} className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer">
                     Confirm Order

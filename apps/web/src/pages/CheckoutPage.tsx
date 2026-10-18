@@ -1,13 +1,8 @@
 import React, { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../store/cart";
 import { useAuth } from "../store/auth";
 import { api } from "../api/client";
-
-interface MobileMoneyDetails {
-  provider: "MTN" | "Orange";
-  phoneNumber: string;
-}
 
 interface ShippingAddress {
   fullName: string;
@@ -18,8 +13,6 @@ interface ShippingAddress {
   postalCode: string;
   country: string;
 }
-
-type PaymentMethod = "MTN" | "ORANGE";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -37,15 +30,6 @@ export default function CheckoutPage() {
     country: "Cameroon",
   });
 
-  const [paymentMethod, setPaymentMethod] =
-    useState<PaymentMethod>("MTN");
-
-  const [mobileMoney, setMobileMoney] =
-    useState<MobileMoneyDetails>({
-      provider: "MTN",
-      phoneNumber: "+237 ",
-    });
-
   const [activeStep, setActiveStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] =
     useState<boolean>(false);
@@ -58,44 +42,13 @@ export default function CheckoutPage() {
   const [createdOrderIds, setCreatedOrderIds] =
     useState<string[]>([]);
 
-  const handlePaymentMethodChange = (
-    method: PaymentMethod
-  ) => {
-    setPaymentMethod(method);
-    setMobileMoney((prev) => ({
-      ...prev,
-      provider: method === "MTN" ? "MTN" : "Orange",
-    }));
-    setErrorMsg(null);
-  };
-
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = e.target.value;
-    if (!val.startsWith("+237")) {
-      val = "+237 " + val.replace(/^\+?237\s*/, "");
-    }
-    setMobileMoney({
-      ...mobileMoney,
-      phoneNumber: val,
-    });
-  };
-
   // Pricing calculations performed natively in CFA (XAF)
   const pricingBreakdown = useMemo(() => {
     const subtotal = items.reduce(
       (acc, item) => acc + item.price * item.quantity,
       0
     );
-    const shippingCost = subtotal > 30000 ? 0 : 2500;
-    const tax = subtotal * 0.01; 
-    const total = subtotal + shippingCost + tax;
-
-    return {
-      subtotal,
-      shippingCost,
-      tax,
-      total,
-    };
+    return { subtotal };
   }, [items]);
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -114,28 +67,10 @@ export default function CheckoutPage() {
       return;
     }
 
-    const cleanPhoneNumber = mobileMoney.phoneNumber.replace(/\D/g, "");
-    if (cleanPhoneNumber.length < 11) {
-      setErrorMsg(
-        `Please enter a valid ${
-          paymentMethod === "MTN"
-            ? "MTN Mobile Money"
-            : "Orange Money"
-        } phone number.`
-      );
-      setActiveStep(2);
-      return;
-    }
-
     setIsSubmitting(true);
-    setSubmitStepText(
-      `Verifying ${paymentMethod === "MTN" ? "MTN Mobile Money" : "Orange Money"} payment...`
-    );
+    setSubmitStepText("Creating your order...");
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setSubmitStepText("Creating cross-vendor orders in ledger...");
-
       const orderPayload = {
         vendor_id: "d03e1cba-0150-45e2-8ee9-8815ce6602e4",
         items: items.map((item) => ({
@@ -144,28 +79,25 @@ export default function CheckoutPage() {
           quantity: item.quantity,
           price: item.price,
         })),
-        total_price: pricingBreakdown.total,
-        payment_method: paymentMethod,
-        payment_provider: mobileMoney.provider,
-        payment_phone_number: mobileMoney.phoneNumber,
+        total_price: pricingBreakdown.subtotal,
         currency: "XAF",
       };
 
       const response = await api.post("/orders", orderPayload);
 
-      setSubmitStepText("Syncing transaction ledger clearance...");
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      if (response.data && response.data.order_ids) {
+      if (response.data && Array.isArray(response.data.order_ids)) {
         setCreatedOrderIds(response.data.order_ids);
       }
 
       setShowSuccessModal(true);
       clearCart();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[PostgreSQL Checkout Syncer Error]:", err);
+      const detail = typeof err === "object" && err !== null && "response" in err
+        ? (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+        : undefined;
       setErrorMsg(
-        err.response?.data?.detail ||
+        (typeof detail === "string" ? detail : undefined) ||
           "Checkout synchronization failed. Please try again."
       );
     } finally {
@@ -182,8 +114,8 @@ export default function CheckoutPage() {
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-500 bg-clip-text text-transparent">
               Secure Checkout
             </h1>
-            <p className="text-xs text-slate-400 font-medium font-mono uppercase tracking-wider">
-              🔒 SSL 256-Bit Mobile Money Checkout (XAF)
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">
+              Order placement · XAF
             </p>
           </div>
           <button
@@ -232,6 +164,10 @@ export default function CheckoutPage() {
                     </button>
                   )}
                 </div>
+
+                <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-200/80">
+                  The current order API does not save delivery addresses. Do not rely on this address being sent to the seller; confirm delivery arrangements separately.
+                </p>
 
                 {activeStep === 1 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
@@ -300,7 +236,7 @@ export default function CheckoutPage() {
                         onClick={() => setActiveStep(2)}
                         className="px-6 py-3 bg-white/5 border border-white/10 hover:bg-white/10 font-bold rounded-xl tracking-wider uppercase transition-all cursor-pointer"
                       >
-                        Proceed to Payment Choice
+                        Continue to order review
                       </button>
                     </div>
                   </div>
@@ -313,63 +249,12 @@ export default function CheckoutPage() {
 
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
                 <h3 className="text-lg font-bold flex items-center gap-2.5 border-b border-white/5 pb-4">
-                  <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">2</span>
-                  Choose Mobile Money Payment
+                <span className="w-6 h-6 rounded-full bg-amber-500/15 text-amber-300 flex items-center justify-center text-xs font-black">2</span>
+                Payment information
                 </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-bold uppercase tracking-wider pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePaymentMethodChange("MTN")}
-                    className={`p-5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                      paymentMethod === "MTN"
-                        ? "border-yellow-400 bg-yellow-400/10 text-yellow-400 shadow-md shadow-yellow-500/10"
-                        : "border-white/5 bg-slate-950/40 text-slate-400 hover:border-white/10 hover:text-white"
-                    }`}
-                  >
-                    <span className="text-3xl">📱</span>
-                    <span className="text-sm font-black">MTN Mobile Money</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePaymentMethodChange("ORANGE")}
-                    className={`p-5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                      paymentMethod === "ORANGE"
-                        ? "border-orange-500 bg-orange-500/10 text-orange-400 shadow-md shadow-orange-500/10"
-                        : "border-white/5 bg-slate-950/40 text-slate-400 hover:border-white/10 hover:text-white"
-                    }`}
-                  >
-                    <span className="text-3xl">📱</span>
-                    <span className="text-sm font-black">Orange Money</span>
-                  </button>
-                </div>
-
-                <div className="pt-4">
-                  <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl space-y-4">
-                    <div>
-                      <p className="font-bold text-slate-200 text-sm">
-                        {paymentMethod === "MTN" ? "📱 MTN Mobile Money" : "📱 Orange Money"}
-                      </p>
-                      <p className="text-slate-400 text-xs mt-1">
-                        Enter your phone number. Authorized natively in FCFA.
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-                        Phone Number
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        value={mobileMoney.phoneNumber}
-                        onChange={handlePhoneChange}
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-3 text-white font-mono focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <p className="text-xs leading-5 text-amber-200/80">
+                Online payment processing is not connected. You can place an order, but this page will not charge or confirm a payment.
+                </p>
               </div>
 
               <div className="bg-white/[0.02] border border-white/10 rounded-3xl p-6 md:p-8 space-y-4">
@@ -405,22 +290,8 @@ export default function CheckoutPage() {
                 <h3 className="text-lg font-bold border-b border-white/5 pb-3">Pricing Summary</h3>
                 <div className="space-y-2 text-xs font-medium text-slate-400 font-mono">
                   <div className="flex justify-between">
-                    <span>Subtotal</span>
+                    <span>Items subtotal</span>
                     <span className="text-slate-200">{Math.round(pricingBreakdown.subtotal).toLocaleString()} FCFA</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Shipping fee</span>
-                    <span className="text-slate-200">
-                      {pricingBreakdown.shippingCost === 0 ? "FREE" : `${Math.round(pricingBreakdown.shippingCost).toLocaleString()} FCFA`}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Tax</span>
-                    <span className="text-slate-200">{Math.round(pricingBreakdown.tax).toLocaleString()} FCFA</span>
-                  </div>
-                  <div className="flex justify-between text-base font-bold text-white pt-3 border-t border-white/5 font-sans">
-                    <span>Total</span>
-                    <span className="text-emerald-400 font-black">{Math.round(pricingBreakdown.total).toLocaleString()} FCFA</span>
                   </div>
                 </div>
 
@@ -433,7 +304,7 @@ export default function CheckoutPage() {
                   {isSubmitting ? (
                     <span className="animate-pulse">{submitStepText || "Processing..."}</span>
                   ) : (
-                    `Pay ${Math.round(pricingBreakdown.total).toLocaleString()} FCFA`
+                    `Place order · ${Math.round(pricingBreakdown.subtotal).toLocaleString()} FCFA`
                   )}
                 </button>
               </div>
@@ -450,11 +321,21 @@ export default function CheckoutPage() {
               🎉
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-bold tracking-tight text-white">Order Successful!</h3>
+              <h3 className="text-2xl font-bold tracking-tight text-white">Order placed</h3>
               <p className="text-slate-400 text-xs">
-                Your payment of {Math.round(pricingBreakdown.total).toLocaleString()} FCFA was validated.
+                Your order was created. Payment has not been processed or confirmed online.
               </p>
             </div>
+            {createdOrderIds.length > 0 && (
+              <div className="space-y-2 text-left">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Order reference{createdOrderIds.length === 1 ? "" : "s"}</p>
+                {createdOrderIds.map((orderId) => (
+                  <Link key={orderId} to={`/buyer/orders/${encodeURIComponent(orderId)}`} className="block break-all rounded-lg border border-white/10 p-3 font-mono text-xs text-brand hover:border-brand/40">
+                    {orderId}
+                  </Link>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => navigate("/buyer")}

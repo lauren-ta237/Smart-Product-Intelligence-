@@ -9,6 +9,7 @@ import shutil
 import uuid
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config.settings import settings
 from app.core.auth import get_current_vendor, get_current_vendor_optional
 from app.core.database import get_db
 from app.modules.catalog.schemas import ProductApproveRequest
@@ -21,7 +22,7 @@ from typing import List, Dict, Any
 # UPLOAD CONFIGURATION
 # ============================================================
 
-UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR = settings.UPLOADS_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 

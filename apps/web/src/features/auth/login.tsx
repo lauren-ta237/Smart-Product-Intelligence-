@@ -1,11 +1,13 @@
 // apps/web/src/features/auth/login.tsx
 import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
+import { isAxiosError } from "axios";
 import { api } from "../../api/client";
 import { useAuth } from "../../store/auth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const login = useAuth((state) => state.login);
 
   const [email, setEmail] = useState("");
@@ -14,11 +16,12 @@ export default function Login() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const formatErrorMessage = (detail: any): string => {
+  const formatErrorMessage = (detail: unknown): string => {
     if (!detail) return "Invalid email or password";
     if (typeof detail === "string") return detail;
-    if (Array.isArray(detail) && detail[0]?.msg) {
-      return detail[0].msg;
+    if (Array.isArray(detail) && typeof detail[0] === "object" && detail[0] !== null && "msg" in detail[0]) {
+      const message = detail[0].msg;
+      if (typeof message === "string") return message;
     }
     return "Invalid email or password";
   };
@@ -52,20 +55,23 @@ export default function Login() {
       login(token, user);
 
       const rawRole = String(user?.role || "").trim().toLowerCase();
+      const requested = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+      const requestedPath = requested?.pathname || "";
+      const requestedDestination = requestedPath.startsWith("/") && !requestedPath.startsWith("//") && !requestedPath.includes("\\")
+        ? `${requestedPath}${requested?.search || ""}${requested?.hash || ""}`
+        : "";
 
-      // Role-Based Post-Login Navigation:
-      // Vendor -> vendor area
-      // Admin -> /admin
-      // Buyer / default -> /
       if (rawRole === "admin" || rawRole === "superadmin") {
-        navigate("/admin", { replace: true });
+        navigate(requestedPath.startsWith("/admin/") || requestedPath === "/admin" ? requestedDestination : "/admin", { replace: true });
       } else if (rawRole === "vendor") {
-        navigate("/vendor/dashboard", { replace: true });
+        navigate(requestedPath.startsWith("/vendor/") ? requestedDestination : "/vendor/dashboard", { replace: true });
       } else {
-        navigate("/buyer", { replace: true });
+        const buyerDestination = requestedPath === "/dashboard" || requestedPath === "/buyer" ||
+          requestedPath.startsWith("/buyer/") || requestedPath === "/track-order";
+        navigate(buyerDestination ? requestedDestination : "/dashboard", { replace: true });
       }
-    } catch (err: any) {
-      const rawDetail = err.response?.data?.detail;
+    } catch (err: unknown) {
+      const rawDetail = isAxiosError(err) ? err.response?.data?.detail : undefined;
       setError(formatErrorMessage(rawDetail));
     } finally {
       setLoading(false);

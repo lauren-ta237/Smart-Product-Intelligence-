@@ -10,6 +10,14 @@ import CheckoutPage from "../pages/CheckoutPage";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
 import ProductCreateForm from "../components/products/ProductCreateForm";
 import ProductDetails from "../pages/ProductDetails";
+import CatalogBrowsePage from "../pages/CatalogBrowsePage";
+import ContactPage from "../pages/ContactPage";
+import NotFoundPage from "../pages/NotFoundPage";
+import BuyerLayout from "./buyer/BuyerLayout";
+import BuyerDashboardPage from "./buyer/DashboardPage";
+import WishlistPage from "./buyer/WishlistPage";
+import OrderTrackingPage from "./buyer/OrderTrackingPage";
+import VendorOrderDetailsPage from "./vendor/OrderDetailsPage";
 
 const buyerRoles = ["buyer", "customer"];
 const vendorRoles = ["vendor", "admin", "superadmin"];
@@ -23,25 +31,22 @@ export default function Router() {
         <Route path="/" element={<Dashboard viewMode="buyer" />} />
         <Route path="/products" element={<Dashboard viewMode="buyer" />} />
         <Route path="/products/:productId" element={<ProductDetails />} />
+        <Route path="/categories" element={<CatalogBrowsePage mode="categories" />} />
+        <Route path="/search" element={<CatalogBrowsePage mode="search" />} />
+        <Route path="/contact" element={<ContactPage />} />
 
-        {/* Buyer area */}
-        <Route
-          path="/buyer"
-          element={
-            <ProtectedRoute allowedRoles={buyerRoles}>
-              <Dashboard viewMode="buyer" />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/buyer/cart" element={<ProtectedRoute allowedRoles={buyerRoles}><Dashboard viewMode="buyer" /></ProtectedRoute>} />
-        <Route path="/buyer/wishlist" element={<ProtectedRoute allowedRoles={buyerRoles}><Dashboard viewMode="buyer" /></ProtectedRoute>} />
-        <Route path="/buyer/checkout" element={<ProtectedRoute allowedRoles={buyerRoles}><CheckoutPage /></ProtectedRoute>} />
-        <Route path="/buyer/orders" element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerOrders /></ProtectedRoute>} />
-        <Route path="/buyer/orders/:orderId" element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerOrders /></ProtectedRoute>} />
+        {/* Buyer workspace; access and navigation remain buyer/customer-only. */}
+        <Route element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerLayout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<BuyerDashboardPage />} />
+          <Route path="/buyer" element={<Dashboard viewMode="buyer" />} />
+          <Route path="/buyer/cart" element={<Dashboard viewMode="buyer" />} />
+          <Route path="/buyer/wishlist" element={<WishlistPage />} />
+          <Route path="/buyer/checkout" element={<CheckoutPage />} />
+          <Route path="/buyer/orders" element={<BuyerOrders />} />
+          <Route path="/buyer/orders/:orderId" element={<BuyerOrders />} />
+          <Route path="/track-order" element={<OrderTrackingPage />} />
+        </Route>
         <Route path="/buyer/profile" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<ProtectedRoute allowedRoles={buyerRoles}><Dashboard viewMode="buyer" /></ProtectedRoute>} />
-        <Route path="/dashboard/orders" element={<Navigate to="/buyer/orders" replace />} />
-        <Route path="/dashboard/orders/:orderId" element={<ProtectedRoute allowedRoles={buyerRoles}><BuyerOrders /></ProtectedRoute>} />
 
         {/* Vendor area */}
         <Route path="/vendor/dashboard" element={<ProtectedRoute allowedRoles={vendorRoles}><Dashboard viewMode="vendor" initialVendorSection="overview" /></ProtectedRoute>} />
@@ -52,7 +57,7 @@ export default function Router() {
         <Route path="/vendor/ai/upload" element={<Navigate to="/vendor/upload" replace />} />
         <Route path="/vendor/ai/review" element={<ProtectedRoute allowedRoles={vendorRoles}><Review /></ProtectedRoute>} />
         <Route path="/vendor/orders" element={<ProtectedRoute allowedRoles={vendorRoles}><Dashboard viewMode="vendor" initialVendorSection="orders" /></ProtectedRoute>} />
-        <Route path="/vendor/orders/:orderId" element={<ProtectedRoute allowedRoles={vendorRoles}><BuyerOrders /></ProtectedRoute>} />
+        <Route path="/vendor/orders/:orderId" element={<ProtectedRoute allowedRoles={vendorRoles}><VendorOrderDetailsPage /></ProtectedRoute>} />
         <Route path="/vendor/apiKeys" element={<ProtectedRoute allowedRoles={vendorRoles}><Dashboard viewMode="vendor" initialVendorSection="developer" /></ProtectedRoute>} />
         <Route path="/vendor/developer/api-keys" element={<Navigate to="/vendor/apiKeys" replace />} />
 
@@ -84,8 +89,7 @@ export default function Router() {
         <Route path="/orders" element={<Navigate to="/buyer/orders" replace />} />
         <Route path="/wishlist" element={<Navigate to="/buyer/wishlist" replace />} />
 
-        {/* Fallback 404 Route redirecting to root landing page */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
   );

@@ -66,8 +66,8 @@ async def create_orders(
                     price=i.price
                 ))
             
-            db.add(Payment(order_id=new_order.id, amount=total, status=PaymentStatus.PAID))
-            db.add(Shipment(order_id=new_order.id, estimated_delivery="Pending Update"))
+            db.add(Payment(order_id=new_order.id, amount=total, status=PaymentStatus.PENDING))
+            db.add(Shipment(order_id=new_order.id))
             order_ids.append(str(new_order.id))
 
         await db.commit()
@@ -81,8 +81,7 @@ async def get_buyer_orders(db: AsyncSession = Depends(get_db), user = Depends(ge
     """Fetches orders bought by the current user with details."""
     stmt = select(Order).where(Order.buyer_id == user.id).options(
         selectinload(Order.items), 
-        selectinload(Order.shipment),
-        selectinload(Order.payments)
+        selectinload(Order.shipment)
     ).order_by(Order.created_at.desc())
     result = await db.execute(stmt)
     orders = result.scalars().all()
@@ -91,13 +90,8 @@ async def get_buyer_orders(db: AsyncSession = Depends(get_db), user = Depends(ge
     for order in orders:
         response.append({
             "id": str(order.id),
+            "created_at": order.created_at.isoformat() if order.created_at else None,
             "status": order.status,
-            "date": order.created_at.isoformat(),
-            "payment_status": (
-                order.payments[0].status.value
-                if order.payments
-                else None
-            ),
             "total_price": float(order.total_price),
             "carrier": order.shipment.carrier if order.shipment else None,
             "tracking_number": order.shipment.tracking_number if order.shipment else None,
@@ -105,6 +99,36 @@ async def get_buyer_orders(db: AsyncSession = Depends(get_db), user = Depends(ge
             "items": [{"product_name": i.product_name, "quantity": i.quantity, "price": float(i.price)} for i in order.items]
         })
     return response
+
+@router.get("/buyer/{order_id}")
+async def get_buyer_order(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    stmt = (
+        select(Order)
+        .where(Order.id == order_id, Order.buyer_id == user.id)
+        .options(selectinload(Order.items), selectinload(Order.shipment))
+    )
+    result = await db.execute(stmt)
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    return {
+        "id": str(order.id),
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "status": order.status,
+        "total_price": float(order.total_price),
+        "carrier": order.shipment.carrier if order.shipment else None,
+        "tracking_number": order.shipment.tracking_number if order.shipment else None,
+        "estimated_delivery": order.shipment.estimated_delivery if order.shipment else None,
+        "items": [
+            {"product_name": item.product_name, "quantity": item.quantity, "price": float(item.price)}
+            for item in order.items
+        ],
+    }
 
 @router.get("/vendor")
 async def get_vendor_orders(db: AsyncSession = Depends(get_db), v_id = Depends(get_current_vendor)):
@@ -121,16 +145,46 @@ async def get_vendor_orders(db: AsyncSession = Depends(get_db), v_id = Depends(g
         buyer = buyer_res.scalar_one_or_none()
         response.append({
             "id": str(order.id),
+            "created_at": order.created_at.isoformat() if order.created_at else None,
             "status": order.status,
             "total_price": float(order.total_price),
             "buyer_name": f"{buyer.first_name} {buyer.last_name}" if (buyer and buyer.first_name) else "Marketplace Guest",
             "buyer_contact": buyer.email if buyer else "N/A",
-            "delivery_address": f"{buyer.city}, {buyer.country}" if (buyer and buyer.city) else "Global Hub",
             "items": [{"product_name": i.product_name, "quantity": i.quantity, "price": float(i.price)} for i in order.items],
             "carrier": order.shipment.carrier if order.shipment else None,
             "tracking_number": order.shipment.tracking_number if order.shipment else None
         })
     return response
+
+@router.get("/vendor/{order_id}")
+async def get_vendor_order(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    v_id=Depends(get_current_vendor),
+):
+    stmt = (
+        select(Order)
+        .where(Order.id == order_id, Order.vendor_id == v_id)
+        .options(selectinload(Order.items), selectinload(Order.shipment))
+    )
+    result = await db.execute(stmt)
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    return {
+        "id": str(order.id),
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "status": order.status,
+        "total_price": float(order.total_price),
+        "carrier": order.shipment.carrier if order.shipment else None,
+        "tracking_number": order.shipment.tracking_number if order.shipment else None,
+        "estimated_delivery": order.shipment.estimated_delivery if order.shipment else None,
+        "items": [
+            {"product_name": item.product_name, "quantity": item.quantity, "price": float(item.price)}
+            for item in order.items
+        ],
+    }
 
 @router.patch("/{order_id}/status")
 async def update_order_status(order_id: uuid.UUID, payload: ShipmentUpdatePayload, db: AsyncSession = Depends(get_db), v_id = Depends(get_current_vendor)):

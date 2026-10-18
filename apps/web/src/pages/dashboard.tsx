@@ -7,7 +7,6 @@ import { useWishlist } from "../store/wishlist";
 import PromotionalCarousel, { type PromotionSlide } from "../components/marketplace/PromotionalCarousel";
 import MarketplaceProductCard from "../components/marketplace/MarketplaceProductCard";
 import MarketplaceFooter from "../components/marketplace/MarketplaceFooter";
-import BuyerSidebar from "../components/BuyerSidebar";
 
 import Upload from "../features/upload/UploadDropzone";
 import ProductCreateForm from "../components/products/ProductCreateForm";
@@ -18,6 +17,7 @@ import { getProducts } from "../api/products";
 import { useDashboard } from "../hooks/useDashboard";
 import { getBuyerOrders } from "../api/orders";
 import VendorOrders from "../components/vendor/VendorOrders";
+import { useWishlistSync } from "../hooks/useWishlistSync";
 
 // --- TYPE DEFINITIONS ---
 
@@ -94,8 +94,6 @@ interface MarketplaceHeaderProps {
   activeTab: "marketplace" | "activity";
   setActiveTab: (tab: "marketplace" | "activity") => void;
   isVendorView: boolean;
-  selectedCategory?: string;
-  setSelectedCategory?: (category: string) => void;
 }
 
 // --- HEADER COMPONENT ---
@@ -108,9 +106,8 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
   activeTab,
   setActiveTab,
   isVendorView,
-  selectedCategory,
-  setSelectedCategory,
 }) => {
+  const navigate = useNavigate();
   const user = useAuth((state) => state.user);
   const wishlistCount = useWishlist((state) => state.items.length);
 
@@ -180,30 +177,36 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
         </Link>
 
         {activeTab === "marketplace" && (
-          <div className="relative min-w-0">
+          <form
+            className="relative flex min-w-0 gap-2"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const query = searchQuery.trim();
+              navigate(query ? `/search?q=${encodeURIComponent(query)}` : "/search");
+            }}
+          >
             <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" });
-              }}
               placeholder="Search products, categories, and more"
               aria-label="Search marketplace products"
-              className="w-full rounded-full border border-white/10 bg-slate-950 py-3 pl-11 pr-11 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+              className="w-full min-w-0 rounded-full border border-white/10 bg-slate-950 py-3 pl-11 pr-16 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
                 aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
+                className="absolute right-20 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
               >
                 Clear
               </button>
             )}
-          </div>
+            <button type="submit" aria-label="Search" className="shrink-0 rounded-full bg-brand px-4 text-xs font-bold text-white hover:bg-brand-hover">Search</button>
+          </form>
         )}
 
         <div className="flex items-center justify-center gap-2 sm:gap-3">
@@ -243,10 +246,9 @@ export const MarketplaceHeader: React.FC<MarketplaceHeaderProps> = ({
 
       <nav aria-label="Main navigation" className="flex flex-wrap items-center justify-center gap-2 border-t border-white/5 px-4 py-3 sm:justify-start sm:px-6">
         <button type="button" onClick={() => setActiveTab("marketplace")} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === "marketplace" ? "bg-brand text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>Catalog & deals</button>
-        <button type="button" onClick={() => setActiveTab("activity")} className={`rounded-full px-4 py-2 text-xs font-bold transition ${activeTab === "activity" ? "bg-brand text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>My orders</button>
-        {selectedCategory && setSelectedCategory && (
-          <a href="#categories" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Categories</a>
-        )}
+        <Link to="/buyer/orders" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">My orders</Link>
+        <Link to="/categories" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Categories</Link>
+        <Link to="/contact" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Contact</Link>
         {isVendorUser && <Link to="/vendor/dashboard" className="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white"><Store size={14} /> Vendor dashboard</Link>}
         {isAdminUser && <Link to="/admin" className="rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-white/5 hover:text-white">Admin panel</Link>}
         {user && <button type="button" onClick={() => useAuth.getState().logout()} className="ml-auto rounded-full px-4 py-2 text-xs font-bold text-slate-400 transition hover:bg-red-500/10 hover:text-red-400">Sign out</button>}
@@ -268,6 +270,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [loading, setLoading] = useState<boolean>(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   // Toggle between AI and Manual creation for Vendors
   const [vendorCreationMode, setVendorCreationMode] = useState<
@@ -289,8 +292,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
   const [activeTab, setActiveTab] = useState<"marketplace" | "activity">(
     location.pathname.includes("wishlist") ||
-      location.hash === "#profile" ||
-      location.hash === "#activity" ||
+      location.pathname.includes("profile") ||
       location.pathname.includes("activity")
       ? "activity"
       : "marketplace"
@@ -306,6 +308,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
   } | null;
 
   const token = useAuth((state) => state.token);
+  useWishlistSync();
 
   const rawRole = String(user?.role || "").trim().toLowerCase();
 
@@ -314,7 +317,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
     rawRole === "admin" ||
     rawRole === "superadmin";
 
-  // Strict architectural separation between Buyer Marketplace (/) and Vendor Dashboard (/dashboard):
+  // Keep the vendor workspace separate from the public buyer marketplace.
   // - If viewMode is explicitly "buyer" or path is exactly "/", it is ALWAYS Buyer Marketplace.
   // - If viewMode is explicitly "vendor" or path is under "/vendor", it renders Vendor Dashboard.
   const isVendorView =
@@ -322,11 +325,6 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
     (viewMode !== "buyer" &&
       location.pathname.startsWith("/vendor/") &&
       isVendorRole);
-  const showBuyerSidebar =
-    !isVendorView &&
-    (location.pathname === "/dashboard" ||
-      location.pathname === "/buyer/wishlist" ||
-      location.pathname === "/buyer/cart");
 
   const isVerified = Boolean(user?.is_verified);
 
@@ -342,6 +340,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
     addToWishlist,
     removeFromWishlist,
     isInWishlist,
+    error: wishlistError,
   } = useWishlist();
 
   const { data: stats } = useDashboard();
@@ -384,10 +383,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
         "";
 
       return {
-        id: String(
-          item.id ||
-            `prod-${Math.random().toString(36).substring(2, 9)}`
-        ),
+        id: item.id === undefined || item.id === null ? "" : String(item.id),
         name: String(
           item.name || item.brand || "AI-Verified Produce"
         ),
@@ -419,6 +415,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
   const refreshProductsData = useCallback(async () => {
     try {
       setLoading(true);
+      setCatalogError(null);
 
       const data = await getProducts({ approved: true });
 
@@ -428,7 +425,9 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
         ? (data as any).items
         : [];
 
-      const mapped: ProduceItem[] = rawProducts.map((item) =>
+      const mapped: ProduceItem[] = rawProducts
+        .filter((item) => item.id !== undefined && item.id !== null && String(item.id).length > 0)
+        .map((item) =>
         mapRawToProduceItem(item)
       );
 
@@ -447,6 +446,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
       }
     } catch (error) {
       console.error("Marketplace Sync Error:", error);
+      setCatalogError("Marketplace products could not be loaded. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -497,14 +497,15 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
   const handleToggleWishlist = (product: ProduceItem) => {
     if (!user) {
-      navigate("/login");
+      navigate("/login", { state: { from: { pathname: location.pathname } } });
       return;
     }
 
+    const ownerId = user.id ?? user.email ?? "";
     if (isInWishlist(product.id)) {
-      removeFromWishlist(product.id);
+      void removeFromWishlist(product.id, ownerId);
     } else {
-      addToWishlist(product);
+      void addToWishlist(product, ownerId);
     }
   };
 
@@ -655,14 +656,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 sm:p-10 font-sans antialiased">
-      <div className={`mx-auto animate-in fade-in duration-300 ${showBuyerSidebar ? "grid max-w-[90rem] grid-cols-1 items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)]" : "max-w-7xl space-y-8"}`}>
-        {showBuyerSidebar && (
-          <BuyerSidebar
-            onDashboardClick={() => setActiveTab("marketplace")}
-            onProfileClick={() => setActiveTab("activity")}
-          />
-        )}
-        <div className={`min-w-0 space-y-8 ${showBuyerSidebar ? "lg:col-start-2 lg:row-start-1" : ""}`}>
+      <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
         <MarketplaceHeader
           setCartOpen={setCartOpen}
           totalCartCount={totalCartCount}
@@ -671,8 +665,6 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           isVendorView={isVendorView}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
         />
 
         {isVendorView ? (
@@ -1100,6 +1092,12 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
              VIEW B: PUBLIC BUYER MARKETPLACE (Route: /)
              ========================================================= */
           <main className="space-y-10 animate-in fade-in duration-200">
+            {catalogError && (
+              <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">{catalogError}</p>
+            )}
+            {wishlistError && (
+              <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">{wishlistError}</p>
+            )}
             {/* 1. PROMOTIONAL CAROUSEL */}
             <section className="space-y-3">
               <PromotionalCarousel slides={promotionSlides} />
@@ -1140,6 +1138,9 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                   );
                 })}
               </div>
+              <Link to="/categories" className="inline-flex text-xs font-bold text-brand hover:text-orange-300">
+                Browse all available categories →
+              </Link>
               {selectedCategory !== "all" && (
                 <button
                   type="button"
@@ -1313,8 +1314,9 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
               ) : (
                 <div className="space-y-4">
                   {buyerOrders.map((ord) => (
-                    <div
+                    <Link
                       key={ord.id}
+                      to={`/buyer/orders/${encodeURIComponent(ord.id)}`}
                       className="bg-slate-900/60 p-4 rounded-2xl border border-white/5 flex justify-between items-center"
                     >
                       <div>
@@ -1323,7 +1325,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                         </p>
 
                         <p className="text-[10px] text-slate-400">
-                          {ord.date}
+                          {ord.created_at ? new Date(ord.created_at).toLocaleDateString() : "Date unavailable"}
                         </p>
                       </div>
 
@@ -1337,7 +1339,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                       <span className="bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold">
                         {ord.status}
                       </span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -1346,7 +1348,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
             <div className="space-y-6">
               {/* PROFILE */}
               <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-6 space-y-3">
-                <h3 id="profile" className="text-sm font-bold text-white border-b border-white/5 pb-2">
+                <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2">
                   Profile
                 </h3>
 
@@ -1409,9 +1411,7 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
                           </button>
 
                           <button
-                            onClick={() =>
-                              removeFromWishlist(fav.id)
-                            }
+                            onClick={() => user && void removeFromWishlist(fav.id, user.id ?? user.email ?? "")}
                             className="text-slate-500 text-[9px]"
                           >
                             ✕
@@ -1584,7 +1584,6 @@ export default function Dashboard({ viewMode, initialVendorSection = "overview" 
             </div>
           </div>
         )}
-      </div>
       </div>
     </div>
   );
