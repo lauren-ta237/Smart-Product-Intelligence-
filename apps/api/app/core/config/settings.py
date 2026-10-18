@@ -1,4 +1,5 @@
 # app/core/config/settings.py
+import os
 from pathlib import Path
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,7 +60,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = "http://localhost:5173"
     MAX_UPLOAD_SIZE: int = 10
-    UPLOADS_DIR: Path = BACKEND_DIR / "uploads"
+    
+    # Use /tmp on Vercel to bypass read-only file system errors
+    UPLOADS_DIR: Path = (
+        Path("/tmp/uploads") 
+        if os.environ.get("VERCEL") 
+        else BACKEND_DIR / "uploads"
+    )
 
     # --- CONFIGURATION MODEL ---
     model_config = SettingsConfigDict(
